@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Porta\SymfonyLsp\Installer;
 use Porta\SymfonyLsp\Release;
 use Porta\Tests\Support\PreservesPath;
+use Porta\Tests\Support\Probe;
 use Porta\Tests\Support\PumpsLoop;
 use Porta\Tests\Support\TempProject;
 
@@ -86,9 +87,14 @@ final class InstallerTest extends TestCase
                 return;
             }
             if ('tar-empty' !== $breakAt) {
+                // Mirror the real archive's shape: the binary sits beside
+                // license files, a subdirectory, and (on some platforms) links.
                 $dir = $argv[4].'/symfony-lsp-v9.9.9-macos-arm64';
-                mkdir($dir, recursive: true);
+                mkdir($dir.'/THIRD_PARTY_LICENSES', recursive: true);
                 file_put_contents($dir.'/symfony-lsp', data: 'the server');
+                file_put_contents($dir.'/LICENSE', data: 'MIT');
+                file_put_contents($dir.'/THIRD_PARTY_LICENSES/dep.txt', data: 'MIT');
+                symlink($dir.'/LICENSE', $dir.'/LICENSE.link');
             }
             $onExit($ok, $noOutput);
         };
@@ -128,6 +134,7 @@ final class InstallerTest extends TestCase
         $this->assertSame('the server', file_get_contents((string) $this->installed));
         $this->assertTrue(is_executable((string) $this->installed), 'the copy is chmodded runnable');
         $this->assertCount(4, $this->ran, 'api, tarball, sums, tar — in that order');
+        $this->assertDirectoryDoesNotExist($scratch->path('work'), 'the ~18MB of scratch is swept once the binary landed');
         $this->assertStringContainsString('releases/latest', $this->ran[0]);
         $this->assertStringContainsString('symfony-lsp-v9.9.9-macos-arm64.tar.gz', $this->ran[1], 'the tag from the api names the asset');
         $this->assertStringContainsString('SHA256SUMS', $this->ran[2]);
@@ -212,6 +219,19 @@ final class InstallerTest extends TestCase
         $this->install($scratch);
 
         $this->assertSame('cannot write '.$scratch->path('bin').'/symfony-lsp', $this->failure);
+    }
+
+    public function testSweepingAPathThatVanishedMidRunIsANoOp(): void
+    {
+        // Nothing at the path at all — neither file, link nor dir. The sweep
+        // must shrug, not warn: it runs inside a process-exit callback where
+        // a throw would wedge the chain.
+        $scratch = new TempProject();
+        $installer = new Installer(new Release(), $scratch->path('bin'), $scratch->path('work'), $this->scriptedRunner($scratch));
+
+        Probe::invoke($installer, 'removeTree', $scratch->path('never-created'));
+
+        $this->addToAssertionCount(1);
     }
 
     public function testTheDefaultRunnerDrivesARealProcess(): void

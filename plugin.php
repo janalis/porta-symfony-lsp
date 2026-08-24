@@ -75,7 +75,10 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
             }
             $this->installing = true;
             $api->flash($api->trans('symfony-lsp: downloading the latest release…'), 4.0);
-            $installer = new Installer(new Release(), $binDir, sys_get_temp_dir().'/porta-symfony-lsp-'.(int) getmypid());
+            // Scratch under the user-owned ~/.porta, not the shared /tmp: a
+            // predictable world-writable path invites a symlink swap between
+            // the checksum-verified extract and the copy into bin.
+            $installer = new Installer(new Release(), $binDir, \dirname($binDir).'/tmp/symfony-lsp-install-'.(int) getmypid());
             $installer->install(
                 \PHP_OS_FAMILY,
                 php_uname('m'),

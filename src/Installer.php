@@ -126,7 +126,35 @@ final class Installer
 
                 return;
             }
+            $this->removeTree($this->workDir);
             $onSuccess($target);
         });
+    }
+
+    /**
+     * Sweep the whole scratch dir the install left behind — the ~18MB tarball
+     * plus the extracted archive (which also carries license files and
+     * subdirectories, so this must recurse). Best effort, throw-free: a
+     * leftover scratch file is not worth failing a completed install over,
+     * and an exception here would die inside a process-exit callback.
+     */
+    private function removeTree(string $path): void
+    {
+        if (is_file($path) || is_link($path)) {
+            // @mago-expect lint:no-error-control-operator -- best-effort sweep; an unremovable leftover just stays.
+            @unlink($path);
+
+            return;
+        }
+        if (!is_dir($path)) {
+            return;
+        }
+        foreach (scandir($path) ?: [] as $entry) {
+            if ('.' !== $entry && '..' !== $entry) {
+                $this->removeTree($path.'/'.$entry);
+            }
+        }
+        // @mago-expect lint:no-error-control-operator -- best-effort sweep; an unremovable leftover just stays.
+        @rmdir($path);
     }
 }
