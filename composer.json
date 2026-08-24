@@ -1,0 +1,14 @@
+{
+    "name": "porta/symfony-lsp",
+    "description": "The official Symfony language server (symfony/language-tools) as an LSP provider",
+    "type": "porta-plugin",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "Porta\\SymfonyLsp\\": "src/"
+        }
+    }
+}
