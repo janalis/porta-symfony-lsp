@@ -45,6 +45,17 @@ final class ServerConfig
     }
 
     /**
+     * The binary a previous "Install Server" run landed in $binDir, or null —
+     * the resolver's fallback when neither the setting nor the PATH has one.
+     */
+    public function installed(string $binDir): ?string
+    {
+        $path = $binDir.'/symfony-lsp';
+
+        return is_executable($path) ? $path : null;
+    }
+
+    /**
      * The `initializationOptions` for the initialize handshake, from the
      * plugin's settings. Blank settings fall back to the server's own
      * defaults (`php`, `dev`) rather than sending empty values.

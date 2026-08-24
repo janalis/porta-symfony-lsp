@@ -34,9 +34,19 @@ final class IdeSymfonyLspPluginTest extends TestCase
     use RunsIde;
     use UsesBundledPlugins;
 
+    private ?string $savedPortaHome = null;
+
     protected function setUp(): void
     {
         putenv('PATH=/nonexistent');
+        $home = getenv('PORTA_HOME');
+        $this->savedPortaHome = false === $home ? null : $home;
+    }
+
+    protected function tearDown(): void
+    {
+        putenv('PORTA_HOME'.(null === $this->savedPortaHome ? '' : '='.$this->savedPortaHome));
+        putenv('FAKE_TARBALL');
     }
 
     /**
@@ -135,6 +145,127 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     $options = self::initializeOptions($log)[1];
                     $this->assertSame(true, $options['runtimeIndexing'] ?? null, 'the toggled setting reached the relaunch');
                     $this->assertSame(true, $options['workspaceTrust'] ?? null, 'runtime indexing grants trust');
+                },
+            ],
+        );
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * curl/tar stand-ins on a stubbed PATH: `curl` serves a fixture "release"
+     * (latest-tag JSON, the tarball from $FAKE_TARBALL, a SHA256SUMS whose
+     * hashes really match it), and `tar` "extracts" the expected member — a
+     * runnable script wrapping the mock LSP server, so the post-install
+     * relaunch has something real to talk to.
+     */
+    private static function stubDownloadTools(TempProject $project): void
+    {
+        $mock = \dirname(__DIR__, levels: 3).'/tests/Support/mock-lsp-server.php';
+        $curl = <<<'PHP'
+            $args = array_slice($argv, 1);
+            $out = null;
+            foreach ($args as $i => $a) {
+                if ('-o' === $a) {
+                    $out = $args[$i + 1];
+                }
+            }
+            $url = $args[array_key_last($args)];
+            if (null !== $out) {
+                copy((string) getenv('FAKE_TARBALL'), $out);
+                exit(0);
+            }
+            if (str_contains($url, 'releases/latest')) {
+                echo '{"tag_name":"v9.9.9"}';
+                exit(0);
+            }
+            $hash = hash_file('sha256', (string) getenv('FAKE_TARBALL'));
+            foreach (['macos-arm64', 'macos-x64', 'linux-arm64', 'linux-x64'] as $platform) {
+                echo "{$hash}  symfony-lsp-v9.9.9-{$platform}.tar.gz\n";
+            }
+            exit(0);
+            PHP;
+        $tar = <<<PHP
+            // tar -xzf <tarball> -C <dir>
+            \$dir = \$argv[4].'/'.basename(\$argv[2], '.tar.gz');
+            mkdir(\$dir, 0o755, true);
+            file_put_contents(\$dir.'/symfony-lsp', "#!/bin/sh\\nexec \\"".PHP_BINARY."\\" \\"{$mock}\\"\\n");
+            exit(0);
+            PHP;
+        foreach (['curl' => $curl, 'tar' => $tar] as $name => $body) {
+            $path = $project->path('stubs/'.$name);
+            file_put_contents($path, '#!'.\PHP_BINARY."\n<?php\n".$body."\n");
+            chmod($path, permissions: 0o755);
+        }
+        file_put_contents($project->path('fake.tar.gz'), data: 'opaque bytes standing in for the release archive');
+        putenv('FAKE_TARBALL='.$project->path('fake.tar.gz'));
+        putenv('PATH='.$project->path('stubs'));
+    }
+
+    public function testInstallCommandDownloadsVerifiesAndRelaunchesTheServer(): void
+    {
+        $home = new TempProject();
+        putenv('PORTA_HOME='.$home->dir);
+        $project = new TempProject([
+            't.twig' => "x\n",
+            'stubs/.keep' => '',
+            '.porta.json' => json_encode(['enabledPlugins' => ['symfony-lsp']]),
+        ]);
+        self::stubDownloadTools($project);
+        $installed = $home->dir.'/.porta/bin/symfony-lsp';
+
+        $this->runIde(
+            $project,
+            $project->path('t.twig'),
+            [
+                300 => function ($tui, $terminal, $ide): void {
+                    $this->awaitPainted($tui, $terminal, 'LSP:no server');
+                    $registry = Services::resolve($ide, CommandRegistry::class);
+                    $registry->run('symfony-lsp:install');
+                    // A second invocation while the download runs hits the
+                    // single-flight guard instead of racing a second chain.
+                    $registry->run('symfony-lsp:install');
+                    $this->awaitPainted($tui, $terminal, 'symfony-lsp: already running');
+                },
+                600 => function ($tui, $terminal) use ($installed, $project): void {
+                    $this->await(static fn (): bool => is_file($installed));
+                    $this->assertTrue(is_executable($installed), 'the landed binary is runnable');
+                    $this->awaitPainted($tui, $terminal, 'symfony-lsp installed:');
+
+                    // The path persisted into the plugin's binary setting…
+                    /** @var array{plugins: array{'symfony-lsp': array{binary: string}}} $config */
+                    $config = json_decode((string) file_get_contents($project->path('.porta.json')), associative: true);
+                    $this->assertSame($installed, $config['plugins']['symfony-lsp']['binary']);
+                },
+                900 => function ($tui, $terminal): void {
+                    // …which is also what relaunched the LSP live: the twig
+                    // buffer is now served by the freshly installed server.
+                    $this->awaitPainted($tui, $terminal, 'LSP:symfony-lsp');
+                },
+            ],
+        );
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testAFailedInstallReportsWhyInsteadOfHanging(): void
+    {
+        // PATH is /nonexistent (setUp): the very first curl cannot spawn, and
+        // the failure must surface as a toast — not wedge the busy flag.
+        $project = new TempProject([
+            'a.php' => "<?php\n",
+            '.porta.json' => json_encode(['enabledPlugins' => ['symfony-lsp']]),
+        ]);
+
+        $this->runIde(
+            $project,
+            $project->path('a.php'),
+            [
+                300 => function ($tui, $terminal, $ide): void {
+                    Services::resolve($ide, CommandRegistry::class)->run('symfony-lsp:install');
+                    // The toast box may truncate the tail; the cause prefix is
+                    // the part that must have made it to the screen.
+                    $this->awaitPainted($tui, $terminal, 'symfony-lsp install failed: could not');
                 },
             ],
         );
