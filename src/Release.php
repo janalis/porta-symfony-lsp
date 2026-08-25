@@ -35,16 +35,19 @@ final class Release
         return null === $os || null === $arch ? null : $os.'-'.$arch;
     }
 
-    /** The latest release tag out of GitHub's releases/latest JSON, or null when unreadable. */
+    /**
+     * The latest release tag out of GitHub's releases/latest JSON, or null
+     * when unreadable — or when it does not look like a release tag. The tag
+     * flows into the download URL and the on-disk tarball name, so a hostile
+     * value (`../../x`) must die here, not become a path.
+     */
     public function latestTag(string $json): ?string
     {
         /** @var array{tag_name?: mixed}|bool|int|float|string|null $decoded */
         $decoded = json_decode($json, associative: true);
-        if (!\is_array($decoded) || !\is_string($decoded['tag_name'] ?? null) || '' === $decoded['tag_name']) {
-            return null;
-        }
+        $tag = \is_array($decoded) && \is_string($decoded['tag_name'] ?? null) ? $decoded['tag_name'] : '';
 
-        return $decoded['tag_name'];
+        return 1 === preg_match('/^v[0-9][0-9A-Za-z.\-]*$/', $tag) ? $tag : null;
     }
 
     public function apiUrl(): string

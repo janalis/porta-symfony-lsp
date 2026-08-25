@@ -33,10 +33,13 @@ final class ReleaseTest extends TestCase
         $release = new Release();
 
         $this->assertSame('v0.16.0', $release->latestTag('{"tag_name":"v0.16.0","name":"x"}'));
+        $this->assertSame('v1.0.0-rc.1', $release->latestTag('{"tag_name":"v1.0.0-rc.1"}'), 'pre-release tags are still tags');
         $this->assertNull($release->latestTag('not json'));
         $this->assertNull($release->latestTag('{"name":"no tag"}'));
         $this->assertNull($release->latestTag('{"tag_name":""}'));
         $this->assertNull($release->latestTag('{"tag_name":42}'));
+        $this->assertNull($release->latestTag('{"tag_name":"../../evil"}'), 'the tag becomes a URL segment and a filename — traversal dies here');
+        $this->assertNull($release->latestTag('{"tag_name":"v1/../x"}'));
     }
 
     public function testUrlsAndAssetNamesComposeFromTagAndPlatform(): void
