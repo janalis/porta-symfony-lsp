@@ -135,6 +135,9 @@ final class InstallerTest extends TestCase
         $this->assertTrue(is_executable((string) $this->installed), 'the copy is chmodded runnable');
         $this->assertCount(4, $this->ran, 'api, tarball, sums, tar — in that order');
         $this->assertDirectoryDoesNotExist($scratch->path('work'), 'the ~18MB of scratch is swept once the binary landed');
+        $binEntries = scandir($scratch->path('bin'));
+        $this->assertNotFalse($binEntries);
+        $this->assertSame(['symfony-lsp'], array_values(array_diff($binEntries, ['.', '..'])), 'the staged .installing-* name was renamed away, not left beside the binary');
         $this->assertStringContainsString('releases/latest', $this->ran[0]);
         $this->assertStringContainsString('symfony-lsp-v9.9.9-macos-arm64.tar.gz', $this->ran[1], 'the tag from the api names the asset');
         $this->assertStringContainsString('SHA256SUMS', $this->ran[2]);
@@ -192,6 +195,10 @@ final class InstallerTest extends TestCase
         $this->assertSame('could not extract symfony-lsp-v9.9.9-macos-arm64.tar.gz', $this->failure, 'a clean tar exit without the expected member is still a failure');
 
         $this->assertNull($this->installed);
+        $this->assertDirectoryDoesNotExist(
+            $scratch->path('work'),
+            'every failure sweeps its scratch — a retry loop must not park a tarball per attempt, and a checksum-rejected archive must not stay on disk',
+        );
     }
 
     public function testUncreatableDirectoriesFailCleanly(): void

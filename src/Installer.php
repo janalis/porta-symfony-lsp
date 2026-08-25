@@ -50,6 +50,13 @@ final class Installer
      */
     public function install(string $osFamily, string $machine, \Closure $onSuccess, \Closure $onFailure): void
     {
+        // Every failure sweeps the scratch too: a retried install must not
+        // park another ~18MB per attempt, and a checksum-rejected archive
+        // must not stay on disk at a predictable path.
+        $onFailure = function (string $why) use ($onFailure): void {
+            $this->removeTree($this->workDir);
+            $onFailure($why);
+        };
         $platform = $this->release->platform($osFamily, $machine);
         if (null === $platform) {
             $onFailure('no prebuilt symfony-lsp for '.$osFamily.'/'.$machine);
@@ -115,13 +122,21 @@ final class Installer
 
                 return;
             }
-            // copy + chmod, not rename: the scratch dir and the destination
-            // are routinely on different filesystems (tmpfs vs home).
+            // copy into binDir first (the scratch dir and the destination are
+            // routinely on different filesystems, so a direct rename could
+            // not cross), then rename over the target: same-filesystem rename
+            // is atomic and replaces a BUSY file — overwriting a running
+            // server's binary in place fails with ETXTBSY on Linux and can
+            // hand a racing relaunch a torn executable.
             $target = $this->binDir.'/symfony-lsp';
+            $staged = $target.'.installing-'.(int) getmypid();
             // @mago-expect lint:no-error-control-operator -- same: a squatted target name is reported through onFailure.
-            $copied = @copy($extracted, $target);
+            $copied = @copy($extracted, $staged);
             // @mago-expect lint:no-error-control-operator -- same: a squatted target name is reported through onFailure.
-            if (!$copied || !@chmod($target, permissions: 0o755)) {
+            $prepared = $copied && @chmod($staged, permissions: 0o755);
+            // @mago-expect lint:no-error-control-operator -- same: a squatted target name is reported through onFailure.
+            if (!$prepared || !@rename($staged, $target)) {
+                $this->removeTree($staged);
                 $onFailure('cannot write '.$target);
 
                 return;
@@ -149,7 +164,8 @@ final class Installer
         if (!is_dir($path)) {
             return;
         }
-        foreach (scandir($path) ?: [] as $entry) {
+        $entries = scandir($path);
+        foreach (false === $entries ? [] : $entries as $entry) {
             if ('.' !== $entry && '..' !== $entry) {
                 $this->removeTree($path.'/'.$entry);
             }

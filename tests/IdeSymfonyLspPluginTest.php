@@ -110,7 +110,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 300 => function ($tui, $terminal) use ($log): void {
                     // The twig buffer's didOpen launches the server; the wire
                     // log is the on-disk effect to await, not the status bar.
-                    $this->await(static fn (): bool => [] !== self::initializeOptions($log));
+                    $this->await(static fn (): bool => [] !== self::initializeOptions($log), what: 'the first initialize to reach the wire log');
                     $this->assertSame(
                         ['phpCommand' => ['php'], 'environment' => 'dev', 'runtimeIndexing' => false, 'workspaceTrust' => false],
                         self::initializeOptions($log)[0],
@@ -141,7 +141,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 800 => function ($tui, $terminal) use ($log): void {
                     // The setting edit reconfigures LSP live: the relaunched
                     // server's initialize now grants workspace trust.
-                    $this->await(static fn (): bool => \count(self::initializeOptions($log)) >= 2);
+                    $this->await(static fn (): bool => \count(self::initializeOptions($log)) >= 2, what: 'the relaunched server\'s second initialize');
                     $options = self::initializeOptions($log)[1];
                     $this->assertSame(true, $options['runtimeIndexing'] ?? null, 'the toggled setting reached the relaunch');
                     $this->assertSame(true, $options['workspaceTrust'] ?? null, 'runtime indexing grants trust');
@@ -228,22 +228,66 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp: already running');
                 },
                 600 => function ($tui, $terminal) use ($installed, $project): void {
-                    $this->await(static fn (): bool => is_file($installed));
+                    // Terminal-state, not success-only: a broken chain fires
+                    // the failure toast, and this must fail fast on it rather
+                    // than burn the budget as a bare timeout.
+                    $this->await(
+                        static fn (): bool => is_file($installed) || str_contains(AnsiUtils::stripAnsiCodes($terminal->getOutput()), 'install failed'),
+                        what: 'the install to land the binary or report why not',
+                    );
+                    $this->assertFileExists($installed, 'the install chain reported a failure instead of landing the binary');
                     $this->assertTrue(is_executable($installed), 'the landed binary is runnable');
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp installed:');
 
-                    // The path persisted into the plugin's binary setting…
+                    // The setting is CLEARED, not pointed at the machine-
+                    // specific path: .porta.json travels with the project, and
+                    // an absolute path would shadow teammates' own copies.
                     /** @var array{plugins: array{'symfony-lsp': array{binary: string}}} $config */
                     $config = json_decode((string) file_get_contents($project->path('.porta.json')), associative: true);
-                    $this->assertSame($installed, $config['plugins']['symfony-lsp']['binary']);
+                    $this->assertSame('', $config['plugins']['symfony-lsp']['binary']);
                 },
                 900 => function ($tui, $terminal): void {
-                    // …which is also what relaunched the LSP live: the twig
-                    // buffer is now served by the freshly installed server.
+                    // The clearing write relaunched the LSP live, and with the
+                    // setting empty and no PATH copy this can ONLY resolve
+                    // through the ~/.porta/bin fallback — the discovery step a
+                    // mutation of ServerConfig::installed() would kill.
                     $this->awaitPainted($tui, $terminal, 'LSP:symfony-lsp');
                 },
             ],
         );
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testInstallRefusesWhenThereIsNoHomeToInstallInto(): void
+    {
+        // No PORTA_HOME (tearDown restores it) and no HOME: there is no
+        // user-owned landing spot, and the shared /tmp is deliberately not
+        // one — the command must refuse, not degrade.
+        $savedHome = getenv('HOME');
+        putenv('PORTA_HOME');
+        putenv('HOME');
+        try {
+            $project = new TempProject([
+                'a.php' => "<?php\n",
+                '.porta.json' => json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            ]);
+
+            $this->runIde(
+                $project,
+                $project->path('a.php'),
+                [
+                    300 => function ($tui, $terminal, $ide): void {
+                        Services::resolve($ide, CommandRegistry::class)->run('symfony-lsp:install');
+                        // The toast box truncates long messages; await the
+                        // head of the cause, not the full sentence.
+                        $this->awaitPainted($tui, $terminal, 'install failed: no home');
+                    },
+                ],
+            );
+        } finally {
+            putenv('HOME'.(false === $savedHome ? '' : '='.$savedHome));
+        }
 
         $this->addToAssertionCount(1);
     }

@@ -26,8 +26,10 @@ use Porta\SymfonyLsp\ServerConfig;
  * It serves php, twig, yaml, xml, json and dotenv (narrow the claim with the
  * `languages` setting). It is built to run BESIDE a general PHP server and
  * Porta routes one server per language, so its php claim only wins when
- * neither phpactor nor phpantom is enabled — twig/yaml/xml/json/dotenv are
- * its own either way. javascript/typescript are deliberately not claimed:
+ * neither phpactor nor phpantom is enabled — by LOAD order, so enabling a
+ * PHP server live after this plugin takes the php claim back at the next
+ * launch — and twig/yaml/xml/json/dotenv are its own either way.
+ * javascript/typescript are deliberately not claimed:
  * that would displace the auto-detected typescript-language-server with a
  * server that is not a general TS one.
  *
@@ -42,9 +44,8 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
 
     public function activate(PluginApi $api): void
     {
-        $portaHome = getenv('PORTA_HOME');
-        $home = \is_string($portaHome) && '' !== $portaHome ? $portaHome : getenv('HOME');
-        $binDir = (\is_string($home) && '' !== $home ? $home : sys_get_temp_dir()).'/.porta/bin';
+        $config = new ServerConfig();
+        $binDir = $config->binDir(getenv('PORTA_HOME'), getenv('HOME'));
 
         $api->registerSetting('binary', 'symfony-lsp binary', 'text', '', hint: 'empty = PATH, then ~/.porta/bin (run "Symfony LSP: Install Server" to download)');
         $api->registerSetting('languages', 'Languages', 'text', ServerConfig::DEFAULT_LANGUAGES, hint: 'comma-separated; * = every language');
@@ -52,7 +53,6 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
         $api->registerSetting('php-command', 'PHP command', 'text', 'php', hint: 'inspects the application, e.g. "symfony php"');
         $api->registerSetting('environment', 'Symfony environment', 'text', 'dev');
 
-        $config = new ServerConfig();
         $options = static fn (): array => $config->initializationOptions(
             (string) $api->setting('php-command'),
             (string) $api->setting('environment'),
@@ -62,12 +62,17 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
             $api->registerLanguageServer(
                 $language,
                 'symfony-lsp',
-                fn (): ?array => $config->command($this->binary($api) ?? $config->installed($binDir), $this->claimedLanguages($api), $language),
+                fn (): ?array => $config->command($config->binary($this->binary($api), $binDir), $this->claimedLanguages($api), $language),
                 $options,
             );
         }
 
         $api->registerCommand('install', 'Symfony LSP: Install Server', function () use ($api, $binDir): void {
+            if (null === $binDir) {
+                $api->notify($api->trans('symfony-lsp install failed: %why%', ['%why%' => 'no home directory to install into']), ToastSeverity::Error, 4.0);
+
+                return;
+            }
             if ($this->installing) {
                 $api->flash($api->trans('%tool%: already running', ['%tool%' => $this->name()]));
 
@@ -84,8 +89,13 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
                 php_uname('m'),
                 function (string $path) use ($api): void {
                     $this->installing = false;
-                    // Persisting the path is also what relaunches the LSP live.
-                    $api->changeSetting('binary', $path);
+                    // Clear the setting rather than persisting $path: the
+                    // .porta.json this writes travels with the project, and a
+                    // machine-specific absolute path would shadow teammates'
+                    // own copies. The write (even of the same value) is also
+                    // what relaunches the LSP live — resolved through the
+                    // ~/.porta/bin fallback from here on.
+                    $api->changeSetting('binary', '');
                     $api->notify($api->trans('symfony-lsp installed: %path%', ['%path%' => $path]), ToastSeverity::Success, 4.0);
                 },
                 function (string $why) use ($api): void {
