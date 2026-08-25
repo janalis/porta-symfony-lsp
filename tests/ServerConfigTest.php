@@ -69,6 +69,18 @@ final class ServerConfigTest extends TestCase
         $this->assertNull($config->binary(null, null));
     }
 
+    public function testABareBinaryNamePassesThroughForThePathSearch(): void
+    {
+        // A bare name has no directory to test against — is_executable()
+        // would resolve it against the CWD — and the array-form spawn
+        // PATH-searches it, exactly as phpantom/phpactor treat their setting.
+        $config = new ServerConfig();
+
+        $this->assertSame('symfony-lsp', $config->binary('symfony-lsp', null));
+        $this->assertSame('my-wrapper', $config->binary('my-wrapper', '/nonexistent-bin'), 'the fallback is not consulted for a bare name');
+        $this->assertNull($config->binary('~/bin/symfony-lsp', null), 'a pathed value that does not exist (tilde is not expanded) falls through');
+    }
+
     public function testInitializationOptionsCarryTheSettingsWithExplicitTrust(): void
     {
         $options = new ServerConfig()->initializationOptions('php', 'dev', false);

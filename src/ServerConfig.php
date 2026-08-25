@@ -59,16 +59,20 @@ final class ServerConfig
     }
 
     /**
-     * The binary to launch: the configured/discovered one when it actually
-     * exists, else the copy a previous "Install Server" run landed in $binDir.
-     * The executability check is what keeps a stale `binary` setting — a
-     * teammate's absolute path riding in on a committed .porta.json, a moved
-     * file — from shadowing the working fallbacks and wedging every language
-     * at "starting…".
+     * The binary to launch: the configured/discovered one when it can work,
+     * else the copy a previous "Install Server" run landed in $binDir.
+     *
+     * A bare name (no directory separator) passes through untouched — the
+     * spawn PATH-searches it, exactly as phpantom/phpactor treat their
+     * settings, and is_executable() would wrongly test it against the CWD.
+     * A PATHED value must actually exist: that check is what keeps a stale
+     * `binary` setting — a teammate's absolute path riding in on a committed
+     * .porta.json, a moved file — from shadowing the working fallbacks and
+     * wedging every language at "starting…".
      */
     public function binary(?string $configured, ?string $binDir): ?string
     {
-        if (null !== $configured && is_executable($configured)) {
+        if (null !== $configured && (!str_contains($configured, '/') || is_executable($configured))) {
             return $configured;
         }
 
