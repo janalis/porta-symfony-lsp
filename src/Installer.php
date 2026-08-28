@@ -166,9 +166,11 @@ final class Installer
         }
         $entries = scandir($path);
         foreach (false === $entries ? [] : $entries as $entry) {
-            if ('.' !== $entry && '..' !== $entry) {
-                $this->removeTree($path.'/'.$entry);
+            if (!('.' !== $entry && '..' !== $entry)) {
+                continue;
             }
+
+            $this->removeTree($path.'/'.$entry);
         }
         // @mago-expect lint:no-error-control-operator -- best-effort sweep; an unremovable leftover just stays.
         @rmdir($path);
