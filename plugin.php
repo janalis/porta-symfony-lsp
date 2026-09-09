@@ -82,7 +82,10 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
             $api->flash($api->trans('symfony-lsp: downloading the latest release…'), 4.0);
             // Scratch under the user-owned ~/.porta, not the shared /tmp: a
             // predictable world-writable path invites a symlink swap between
-            // the checksum-verified extract and the copy into bin.
+            // the checksum-verified extract and the copy into bin. Keyed on
+            // the pid so two windows cannot collide, and named with the
+            // installer's own prefix so it can sweep what an interrupted
+            // install (or a recycled pid) left behind.
             // A token only matters for the API fallback (60/hour per IP without
             // one); the redirect the resolver tries first needs none. Read
             // here rather than in Installer so the plugin owns every getenv().
@@ -91,7 +94,7 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
                 $token = getenv('GH_TOKEN');
             }
             $token = false === $token ? '' : $token;
-            $installer = new Installer(new Release(), $binDir, \dirname($binDir).'/tmp/symfony-lsp-install-'.(int) getmypid(), token: $token);
+            $installer = new Installer(new Release(), $binDir, \dirname($binDir).'/tmp/'.Installer::SCRATCH_PREFIX.(int) getmypid(), token: $token);
             $installer->install(
                 \PHP_OS_FAMILY,
                 php_uname('m'),

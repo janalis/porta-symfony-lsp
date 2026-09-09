@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Porta\SymfonyLsp;
 
 use Porta\Support\AsyncProcess;
+use Symfony\Component\Process\ExecutableFinder;
 
 /**
  * Downloads the symfony-lsp release binary for this machine: resolve the
@@ -18,19 +19,46 @@ use Porta\Support\AsyncProcess;
  */
 final class Installer
 {
+    /**
+     * The scratch directory's name, minus the per-process suffix the caller
+     * appends. Shared with the caller so the sweep in {@see reapStaleScratch()}
+     * recognises the directories this class itself creates, and only those.
+     */
+    public const string SCRATCH_PREFIX = 'symfony-lsp-install-';
+
+    /**
+     * How old an abandoned scratch directory must be before a later install
+     * sweeps it. Comfortably past every step's own ceiling
+     * ({@see AsyncProcess::EXTERNAL_TOOL_TIMEOUT}, 300s), because the one
+     * thing this must never do is delete a download a SECOND Porta window is
+     * still running.
+     */
+    private const int STALE_AFTER = 3600;
+
+    /** The external tools every install shells out to, in the order they are needed. */
+    private const array TOOLS = ['curl', 'tar'];
+
     /** @var \Closure(list<string>, string, \Closure(int, string): void): void */
     private readonly \Closure $run;
 
+    /** @var \Closure(string): ?string */
+    private readonly \Closure $findTool;
+
     /**
+     * Two docblocks used to sit here, and PHP reads only the last: everything
+     * said about $binDir, $workDir and $run was invisible to every tool.
+     *
      * @param string $binDir the installed binary's home (created if missing)
-     * @param string $workDir scratch space for the download and extraction
+     * @param string $workDir scratch space for the download and extraction; the
+     *        name must start with {@see SCRATCH_PREFIX} so an abandoned one is
+     *        recognisable to the next install's sweep
      * @param (\Closure(list<string>, string, \Closure(int, string): void): void)|null $run
      *        (argv, cwd, onExit(exit code, stdout)) — inject a fake to test without processes
-     */
-    /**
      * @param string $token a GitHub token for the API fallback, or '' for none.
      *                      Never logged, never toasted — it only ever reaches
      *                      curl's argv.
+     * @param (\Closure(string): ?string)|null $findTool resolves an external tool on the
+     *        PATH — inject a fake to test a machine without curl or without tar
      */
     public function __construct(
         private readonly Release $release,
@@ -39,7 +67,9 @@ final class Installer
         ?\Closure $run = null,
         #[\SensitiveParameter]
         private readonly string $token = '',
+        ?\Closure $findTool = null,
     ) {
+        $this->findTool = $findTool ?? static fn (string $tool): ?string => new ExecutableFinder()->find($tool);
         $this->run = $run ?? /** @param list<string> $argv */ static function (array $argv, string $cwd, \Closure $onExit): void {
             // start() returning false means nothing was spawned and no
             // callback will ever fire — report it as a failed exit instead of
@@ -70,6 +100,17 @@ final class Installer
 
             return;
         }
+        // Probe BOTH tools before a byte moves. tar is not needed until the
+        // archive is on disk, and finding out then means the user waited for a
+        // ~9MB download to be told `could not extract` — which reads as a
+        // corrupt release rather than a missing tool.
+        $missing = $this->missingTool();
+        if (null !== $missing) {
+            $onFailure($missing.' is not available — install it, or set the binary setting by hand');
+
+            return;
+        }
+        $this->reapStaleScratch();
         // @mago-expect lint:no-error-control-operator -- a blocked scratch dir is an expected failure path; its warning must reach the flash, not the error log.
         if (!is_dir($this->workDir) && !@mkdir($this->workDir, permissions: 0o755, recursive: true)) {
             $onFailure('cannot create '.$this->workDir);
@@ -85,6 +126,63 @@ final class Installer
             }
             $this->download($tag, $platform, $onSuccess, $onFailure);
         });
+    }
+
+    /** The first of {@see TOOLS} that is not on the PATH, or null when both are. */
+    private function missingTool(): ?string
+    {
+        foreach (self::TOOLS as $tool) {
+            if (null === ($this->findTool)($tool)) {
+                return $tool;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Delete abandoned scratch directories beside this install's own.
+     *
+     * Nothing else ever reaps them. A completed install sweeps its own, and so
+     * does every failure — but quitting Porta mid-download does neither, and
+     * leaves the ~9MB tarball behind under a name keyed on the pid. Pids are
+     * recycled, so that leftover is also the tree the NEXT install with the
+     * same pid would download into.
+     *
+     * Age is the only safe test: a second Porta window may be downloading into
+     * a sibling right now, and its tarball's mtime moves as curl writes. So a
+     * directory counts as abandoned only when nothing in it has been touched
+     * for {@see STALE_AFTER} — far longer than any step is allowed to take.
+     */
+    private function reapStaleScratch(): void
+    {
+        $parent = \dirname($this->workDir);
+        $entries = is_dir($parent) ? scandir($parent) : false;
+        foreach (false === $entries ? [] : $entries as $entry) {
+            $path = $parent.'/'.$entry;
+            if (!str_starts_with($entry, self::SCRATCH_PREFIX) || !is_dir($path) || self::touchedRecently($path)) {
+                continue;
+            }
+
+            $this->removeTree($path);
+        }
+    }
+
+    /** Whether $dir or anything directly in it was written to within {@see STALE_AFTER}. */
+    private static function touchedRecently(string $dir): bool
+    {
+        $cutoff = time() - self::STALE_AFTER;
+        $newest = (int) filemtime($dir);
+        $entries = scandir($dir);
+        foreach (false === $entries ? [] : $entries as $entry) {
+            if ('.' === $entry || '..' === $entry) {
+                continue;
+            }
+
+            $newest = max($newest, (int) filemtime($dir.'/'.$entry));
+        }
+
+        return $newest > $cutoff;
     }
 
     /**
@@ -152,9 +250,9 @@ final class Installer
      */
     private static function why(int $code, int $redirectCode, string $response, #[\SensitiveParameter] string $token): string
     {
-        if (-1 === $code && -1 === $redirectCode) {
-            return 'curl is not available — install it, or set the binary setting by hand';
-        }
+        // A missing curl no longer arrives here: install() probes the PATH
+        // before it spawns anything, so both resolvers failing now means the
+        // host did not answer — a timeout, a refused connection, a proxy.
         if (0 !== $code && 0 !== $redirectCode) {
             return 'cannot reach github.com — check the network or a proxy';
         }

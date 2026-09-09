@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Porta\SymfonyLsp\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Porta\SymfonyLsp\Installer;
 use Porta\SymfonyLsp\Release;
@@ -391,13 +392,20 @@ final class InstallerTest extends TestCase
 
     public function testTheDefaultRunnerDrivesARealProcess(): void
     {
-        // No fake: the first step spawns the real `curl`, which an empty PATH
-        // turns into a spawn failure — proving the AsyncProcess default runner
-        // wiring end to end without touching the network.
+        // No fake runner: the first step spawns the real `curl`, which an empty
+        // PATH turns into a spawn failure — proving the AsyncProcess default
+        // wiring end to end without touching the network. The finder IS faked,
+        // and has to be: the probe would otherwise stop this before anything
+        // spawned, and the default runner would go untested.
         putenv('PATH=/nonexistent');
         $scratch = new TempProject();
         $failure = null;
-        $installer = new Installer(new Release(), $scratch->path('bin'), $scratch->path('work'));
+        $installer = new Installer(
+            new Release(),
+            $scratch->path('bin'),
+            $scratch->path('work'),
+            findTool: static fn (string $tool): string => '/nonexistent/'.$tool,
+        );
 
         $installer->install(
             'Darwin',
@@ -411,6 +419,100 @@ final class InstallerTest extends TestCase
             return null !== $failure;
         });
 
-        $this->assertSame('curl is not available — install it, or set the binary setting by hand', $failure, 'an empty PATH is a missing curl, not a network fault');
+        $this->assertSame('cannot reach github.com — check the network or a proxy', $failure, 'both resolvers failed to spawn');
+    }
+
+    /**
+     * A tool that is not installed is named before a byte is downloaded.
+     *
+     * tar is the one that matters: it is not needed until the archive is on
+     * disk, so without a probe the user waits out a ~9MB download to be told
+     * `could not extract`, which reads as a corrupt release rather than a
+     * missing tool. Nothing is spawned and no scratch directory is created.
+     */
+    #[DataProvider('missingTools')]
+    public function testAMissingToolIsNamedBeforeAnythingIsDownloaded(string $absent, string $expected): void
+    {
+        $scratch = new TempProject();
+        $installer = new Installer(
+            new Release(),
+            $scratch->path('bin'),
+            $scratch->path('work'),
+            $this->scriptedRunner($scratch),
+            findTool: static fn (string $tool): ?string => $tool === $absent ? null : '/usr/bin/'.$tool,
+        );
+        $failure = null;
+        $installer->install(
+            'Darwin',
+            'arm64',
+            static function (string $path): void {},
+            static function (string $why) use (&$failure): void {
+                $failure = $why;
+            },
+        );
+
+        $this->assertSame($expected, $failure);
+        $this->assertSame([], $this->ran, 'the probe answers before curl is ever spawned');
+        $this->assertDirectoryDoesNotExist($scratch->path('work'), 'and before the scratch dir is created');
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function missingTools(): iterable
+    {
+        yield 'no curl' => ['curl', 'curl is not available — install it, or set the binary setting by hand'];
+        yield 'no tar' => ['tar', 'tar is not available — install it, or set the binary setting by hand'];
+    }
+
+    /**
+     * An install sweeps the scratch a previous, interrupted one abandoned.
+     *
+     * Quitting Porta mid-download runs neither the success sweep nor the
+     * failure sweep, so ~9MB stays under a pid-keyed name that a later install
+     * with a recycled pid would download straight into. Age is the only safe
+     * test — a SECOND Porta window may be downloading into a sibling right
+     * now — so a fresh sibling must survive untouched.
+     */
+    public function testAnAbandonedScratchDirectoryIsSweptAndALiveOneIsNot(): void
+    {
+        $scratch = new TempProject();
+        $tmp = $scratch->path('tmp');
+        $abandoned = $tmp.'/'.Installer::SCRATCH_PREFIX.'404';
+        $live = $tmp.'/'.Installer::SCRATCH_PREFIX.'405';
+        $unrelated = $tmp.'/someone-elses-cache';
+        foreach ([$abandoned, $live, $unrelated] as $dir) {
+            mkdir($dir, permissions: 0o755, recursive: true);
+            file_put_contents($dir.'/symfony-lsp-v9.9.9-macos-arm64.tar.gz', self::TARBALL_BYTES);
+        }
+        $longAgo = time() - 7200;
+        touch($abandoned.'/symfony-lsp-v9.9.9-macos-arm64.tar.gz', $longAgo);
+        touch($abandoned, $longAgo);
+        touch($unrelated.'/symfony-lsp-v9.9.9-macos-arm64.tar.gz', $longAgo);
+        touch($unrelated, $longAgo);
+
+        $this->install($scratch, workDir: $tmp.'/'.Installer::SCRATCH_PREFIX.'406');
+
+        $this->assertNull($this->failure);
+        $this->assertDirectoryDoesNotExist($abandoned, 'the interrupted install is reaped');
+        $this->assertDirectoryExists($live, 'a download another window may still be writing is left alone');
+        $this->assertDirectoryExists($unrelated, 'and nothing outside the installer\'s own naming is touched');
+    }
+
+    /** A recycled pid finds its own stale tree, and starts from empty rather than reusing it. */
+    public function testAScratchDirectoryLeftByARecycledPidIsNotReused(): void
+    {
+        $scratch = new TempProject();
+        $workDir = $scratch->path('tmp').'/'.Installer::SCRATCH_PREFIX.'404';
+        mkdir($workDir.'/symfony-lsp-v9.9.9-macos-arm64', permissions: 0o755, recursive: true);
+        $leftover = $workDir.'/symfony-lsp-v9.9.9-macos-arm64/symfony-lsp';
+        file_put_contents($leftover, data: 'a half-extracted binary from the last life of this pid');
+        $longAgo = time() - 7200;
+        touch($leftover, $longAgo);
+        touch(\dirname($leftover), $longAgo);
+        touch($workDir, $longAgo);
+
+        $this->install($scratch, 'tar-empty', workDir: $workDir);
+
+        $this->assertSame('could not extract symfony-lsp-v9.9.9-macos-arm64.tar.gz', $this->failure, 'the stale binary was swept, so tar extracting nothing is a miss');
+        $this->assertNull($this->installed);
     }
 }
