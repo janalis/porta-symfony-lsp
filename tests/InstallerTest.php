@@ -29,6 +29,8 @@ final class InstallerTest extends TestCase
     /** A 403 with the rate-limit headers GitHub actually sends. */
     /** Stands in for a GitHub credential; the name avoids mago's literal-password rule. */
     private const string FIXTURE_CREDENTIAL = 'sesame';
+    /** What a working install already on disk contains, so a bad one replacing it is visible. */
+    private const string WORKING_COPY = 'the server that already worked';
     private const string NOT_FOUND = "HTTP/2 404\r\n\r\n{}";
     /** A plain 200 with no `location:` — the redirect answered, but named no tag. */
     private const string NO_REDIRECT = "HTTP/2 200\r\n\r\n";
@@ -104,6 +106,14 @@ final class InstallerTest extends TestCase
 
                 return;
             }
+            // The staged binary's own --version smoke test, run before the
+            // rename so a binary that cannot execute never replaces a working
+            // one.
+            if ('--version' === ($argv[1] ?? '')) {
+                $onExit('bad-binary' === $breakAt ? 1 : $ok, $noOutput);
+
+                return;
+            }
             // tar -xzf <tarball> -C <workDir>
             if ('tar-exit' === $breakAt) {
                 $tarError = 1;
@@ -159,7 +169,7 @@ final class InstallerTest extends TestCase
         $this->assertSame($scratch->path('bin').'/symfony-lsp', $this->installed);
         $this->assertSame('the server', file_get_contents((string) $this->installed));
         $this->assertTrue(is_executable((string) $this->installed), 'the copy is chmodded runnable');
-        $this->assertCount(4, $this->ran, 'redirect, tarball, sums, tar — in that order; the API is not touched when the redirect answers');
+        $this->assertCount(5, $this->ran, 'redirect, tarball, sums, tar, then the binary proving it runs; the API is not touched when the redirect answers');
         $this->assertStringNotContainsString('api.github.com', implode(' ', $this->ran), 'the rate-limited API is not spent on a tag lookup');
         $this->assertDirectoryDoesNotExist($scratch->path('work'), 'the ~18MB of scratch is swept once the binary landed');
         $binEntries = scandir($scratch->path('bin'));
@@ -169,6 +179,32 @@ final class InstallerTest extends TestCase
         $this->assertStringContainsString('symfony-lsp-v9.9.9-macos-arm64.tar.gz', $this->ran[1], 'the tag from the redirect names the asset');
         $this->assertStringContainsString('SHA256SUMS', $this->ran[2]);
         $this->assertStringStartsWith('tar -xzf', $this->ran[3]);
+        $this->assertStringEndsWith('--version', $this->ran[4], 'the landed binary is asked to run before it replaces anything');
+    }
+
+    /**
+     * A binary that cannot execute must not replace a working one.
+     *
+     * The rename is atomic and irreversible: once it lands, the old server is
+     * gone. A wrong-architecture download, or one the system refuses to run,
+     * would otherwise "install successfully" and leave the IDE with no server
+     * at all — which looks exactly like the plugin being broken.
+     */
+    public function testABinaryThatWillNotRunIsNotLanded(): void
+    {
+        $scratch = new TempProject();
+        $target = $scratch->path('bin').'/symfony-lsp';
+        mkdir($scratch->path('bin'), permissions: 0o755, recursive: true);
+        file_put_contents($target, self::WORKING_COPY);
+
+        $this->install($scratch, 'bad-binary');
+
+        $this->assertNull($this->installed);
+        $this->assertStringContainsString('does not run here', (string) $this->failure);
+        $this->assertSame(self::WORKING_COPY, file_get_contents($target), 'the working copy is untouched');
+        $binEntries = scandir($scratch->path('bin'));
+        $this->assertNotFalse($binEntries);
+        $this->assertSame(['symfony-lsp'], array_values(array_diff($binEntries, ['.', '..'])), 'and the staged file is swept, not left beside it');
     }
 
     /**
@@ -186,7 +222,7 @@ final class InstallerTest extends TestCase
 
         $this->assertNull($this->failure);
         $this->assertSame($scratch->path('bin').'/symfony-lsp', $this->installed);
-        $this->assertCount(5, $this->ran, 'redirect, then the API, then tarball, sums, tar');
+        $this->assertCount(6, $this->ran, 'redirect, API, tarball, sums, tar, --version');
         $this->assertStringContainsString('api.github.com', $this->ran[1]);
     }
 
@@ -305,6 +341,29 @@ final class InstallerTest extends TestCase
         $this->assertNotNull($this->failure);
         $this->assertStringStartsWith('cannot create', $this->failure);
         $this->assertCount(4, $this->ran);
+    }
+
+    /**
+     * The staging copy itself can fail, separately from the rename.
+     *
+     * A `bin` that exists but is not writable takes the copy down before there
+     * is anything to smoke-test or rename — a different branch from the
+     * squatted-name case below, which now gets as far as the rename.
+     */
+    public function testAnUnwritableBinDirFailsBeforeStaging(): void
+    {
+        $scratch = new TempProject();
+        mkdir($scratch->path('bin'), permissions: 0o755, recursive: true);
+        chmod($scratch->path('bin'), permissions: 0o555);
+
+        try {
+            $this->install($scratch);
+        } finally {
+            chmod($scratch->path('bin'), permissions: 0o755);
+        }
+
+        $this->assertNull($this->installed);
+        $this->assertSame('cannot write '.$scratch->path('bin').'/symfony-lsp', $this->failure);
     }
 
     public function testAnUnwritableTargetFailsTheCopy(): void

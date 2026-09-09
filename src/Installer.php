@@ -250,15 +250,35 @@ final class Installer
             $copied = @copy($extracted, $staged);
             // @mago-expect lint:no-error-control-operator -- same: a squatted target name is reported through onFailure.
             $prepared = $copied && @chmod($staged, permissions: 0o755);
-            // @mago-expect lint:no-error-control-operator -- same: a squatted target name is reported through onFailure.
-            if (!$prepared || !@rename($staged, $target)) {
+            if (!$prepared) {
                 $this->removeTree($staged);
                 $onFailure('cannot write '.$target);
 
                 return;
             }
-            $this->removeTree($this->workDir);
-            $onSuccess($target);
+            // Run it BEFORE the rename, never after. The rename replaces a
+            // working server, so a binary that cannot execute — wrong
+            // architecture, a truncated download that still matched a stale
+            // checksum, a Gatekeeper refusal — must be caught while the old
+            // copy is still the one on disk. Landing it and reporting success
+            // is how an install "succeeds" and leaves an IDE with no server.
+            ($this->run)([$staged, '--version'], $this->workDir, function (int $code) use ($staged, $target, $onSuccess, $onFailure): void {
+                if (0 !== $code) {
+                    $this->removeTree($staged);
+                    $onFailure('the downloaded symfony-lsp does not run here — wrong architecture, or blocked by the system');
+
+                    return;
+                }
+                // @mago-expect lint:no-error-control-operator -- a squatted target name is reported through onFailure.
+                if (!@rename($staged, $target)) {
+                    $this->removeTree($staged);
+                    $onFailure('cannot write '.$target);
+
+                    return;
+                }
+                $this->removeTree($this->workDir);
+                $onSuccess($target);
+            });
         });
     }
 
