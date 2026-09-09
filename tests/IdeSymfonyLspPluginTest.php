@@ -307,9 +307,15 @@ final class IdeSymfonyLspPluginTest extends TestCase
             [
                 300 => function ($tui, $terminal, $ide): void {
                     Services::resolve($ide, CommandRegistry::class)->run('symfony-lsp:install');
-                    // The toast box may truncate the tail; the cause prefix is
-                    // the part that must have made it to the screen.
-                    $this->awaitPainted($tui, $terminal, 'symfony-lsp install failed: could not');
+                    // With no curl to spawn, the cause is a missing curl —
+                    // not a network fault, and not the old catch-all that
+                    // stood for every possible failure at once.
+                    //
+                    // Awaited as a fragment that survives the toast's WRAP:
+                    // the card reflows onto up to MAX_MESSAGE_ROWS rows, so a
+                    // phrase spanning a row boundary never matches contiguously
+                    // however long the test waits.
+                    $this->awaitPainted($tui, $terminal, 'install failed: curl');
                 },
             ],
         );

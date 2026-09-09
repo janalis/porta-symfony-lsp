@@ -27,11 +27,18 @@ final class Installer
      * @param (\Closure(list<string>, string, \Closure(int, string): void): void)|null $run
      *        (argv, cwd, onExit(exit code, stdout)) — inject a fake to test without processes
      */
+    /**
+     * @param string $token a GitHub token for the API fallback, or '' for none.
+     *                      Never logged, never toasted — it only ever reaches
+     *                      curl's argv.
+     */
     public function __construct(
         private readonly Release $release,
         private readonly string $binDir,
         private readonly string $workDir,
         ?\Closure $run = null,
+        #[\SensitiveParameter]
+        private readonly string $token = '',
     ) {
         $this->run = $run ?? /** @param list<string> $argv */ static function (array $argv, string $cwd, \Closure $onExit): void {
             // start() returning false means nothing was spawned and no
@@ -70,15 +77,124 @@ final class Installer
             return;
         }
 
-        ($this->run)(['curl', '-fsSL', $this->release->apiUrl()], $this->workDir, function (int $code, string $json) use ($platform, $onSuccess, $onFailure): void {
-            $tag = 0 === $code ? $this->release->latestTag($json) : null;
+        $this->resolveTag(function (?string $tag, string $why) use ($platform, $onSuccess, $onFailure): void {
             if (null === $tag) {
-                $onFailure('could not resolve the latest symfony-lsp release');
+                $onFailure($why);
 
                 return;
             }
             $this->download($tag, $platform, $onSuccess, $onFailure);
         });
+    }
+
+    /**
+     * The latest release tag, from the web redirect first and the API second.
+     *
+     * The redirect (`github.com/<repo>/releases/latest` → `…/releases/tag/vX`)
+     * is ordinary release traffic on the host the download already uses. The
+     * API is 60 requests per hour per IP unauthenticated, and spending that
+     * budget on a tag lookup is what made this command fail with `could not
+     * resolve the latest symfony-lsp release` while nothing was wrong — a 403
+     * whose real remedy (wait, or set a token) it never named.
+     *
+     * `-D -` puts the headers on stdout, and no `-f`: a `-f` turns every
+     * non-2xx into one exit code and throws the body away, which is precisely
+     * the blindness being fixed. The API keeps `-f` because its answer is JSON
+     * the parser must not be fed garbage.
+     *
+     * @param \Closure(?string, string): void $onTag tag, or null with a reason
+     */
+    private function resolveTag(\Closure $onTag): void
+    {
+        ($this->run)(['curl', '-sSL', '-o', '/dev/null', '-D', '-', $this->release->latestUrl()], $this->workDir, function (int $code, string $headers) use ($onTag): void {
+            $tag = 0 === $code ? $this->release->tagFromLocation($headers) : null;
+            if (null !== $tag) {
+                $noReason = '';
+                $onTag($tag, $noReason);
+
+                return;
+            }
+            $this->resolveTagFromApi($code, $onTag);
+        });
+    }
+
+    /**
+     * The API fallback, used only when the redirect did not answer.
+     *
+     * @param int                             $redirectCode the web attempt's exit code, so a total
+     *                                                      network failure is not blamed on GitHub
+     * @param \Closure(?string, string): void $onTag
+     */
+    private function resolveTagFromApi(int $redirectCode, \Closure $onTag): void
+    {
+        $argv = ['curl', '-sS', '-D', '-', $this->release->apiUrl()];
+        if ('' !== $this->token) {
+            array_splice($argv, offset: 1, length: 0, replacement: ['-H', 'Authorization: Bearer '.$this->token]);
+        }
+
+        ($this->run)($argv, $this->workDir, function (int $code, string $response) use ($redirectCode, $onTag): void {
+            $tag = 0 === $code ? $this->release->latestTag(self::body($response)) : null;
+            if (null !== $tag) {
+                $noReason = '';
+                $onTag($tag, $noReason);
+
+                return;
+            }
+            $onTag(null, self::why($code, $redirectCode, $response, $this->token));
+        });
+    }
+
+    /**
+     * What to tell the user, in a flash-sized line.
+     *
+     * Every one of these used to be `could not resolve the latest symfony-lsp
+     * release`, which is true of all of them and useful for none.
+     */
+    private static function why(int $code, int $redirectCode, string $response, #[\SensitiveParameter] string $token): string
+    {
+        if (-1 === $code && -1 === $redirectCode) {
+            return 'curl is not available — install it, or set the binary setting by hand';
+        }
+        if (0 !== $code && 0 !== $redirectCode) {
+            return 'cannot reach github.com — check the network or a proxy';
+        }
+        $headers = self::headers($response);
+        if (str_contains($headers, '403') && preg_match('~^x-ratelimit-remaining:\s*0~mi', $headers)) {
+            return '' !== $token
+                ? 'GitHub rate limit reached even with a token — try again shortly'
+                : 'GitHub rate limit reached (60/hour per IP) — set GITHUB_TOKEN, or retry in '.self::minutesUntilReset($headers).' min';
+        }
+        if (str_contains($headers, '404')) {
+            return 'no releases found for symfony/language-tools — the repo or release may have moved';
+        }
+
+        return 'could not resolve the latest symfony-lsp release';
+    }
+
+    /** Whole minutes until `x-ratelimit-reset`, floored at 1 so it never reads "0 min". */
+    private static function minutesUntilReset(string $headers): int
+    {
+        $matches = [];
+
+        return 1 === preg_match('~^x-ratelimit-reset:\s*([0-9]+)~mi', $headers, $matches)
+            ? max(1, (int) ceil(((int) $matches[1] - time()) / 60))
+            : 1;
+    }
+
+    /** The header block of a `-D -` response — everything before the first blank line. */
+    private static function headers(string $response): string
+    {
+        $end = strpos($response, needle: "\r\n\r\n");
+
+        return false === $end ? $response : substr($response, offset: 0, length: $end);
+    }
+
+    /** The body of a `-D -` response — everything after the last header block. */
+    private static function body(string $response): string
+    {
+        $end = strrpos($response, needle: "\r\n\r\n");
+
+        return false === $end ? $response : substr($response, $end + 4);
     }
 
     /** @param \Closure(string): void $onSuccess @param \Closure(string): void $onFailure */

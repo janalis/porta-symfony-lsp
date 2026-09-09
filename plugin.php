@@ -83,7 +83,15 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
             // Scratch under the user-owned ~/.porta, not the shared /tmp: a
             // predictable world-writable path invites a symlink swap between
             // the checksum-verified extract and the copy into bin.
-            $installer = new Installer(new Release(), $binDir, \dirname($binDir).'/tmp/symfony-lsp-install-'.(int) getmypid());
+            // A token only matters for the API fallback (60/hour per IP without
+            // one); the redirect the resolver tries first needs none. Read
+            // here rather than in Installer so the plugin owns every getenv().
+            $token = getenv('GITHUB_TOKEN');
+            if (false === $token || '' === $token) {
+                $token = getenv('GH_TOKEN');
+            }
+            $token = false === $token ? '' : $token;
+            $installer = new Installer(new Release(), $binDir, \dirname($binDir).'/tmp/symfony-lsp-install-'.(int) getmypid(), token: $token);
             $installer->install(
                 \PHP_OS_FAMILY,
                 php_uname('m'),

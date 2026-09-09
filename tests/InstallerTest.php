@@ -24,6 +24,15 @@ final class InstallerTest extends TestCase
     use PumpsLoop;
 
     private const string TAG_JSON = '{"tag_name":"v9.9.9"}';
+    /** What `curl -D -` prints for the web redirect: headers, no body. */
+    private const string TAG_REDIRECT = "HTTP/2 302\r\nlocation: https://github.com/symfony/language-tools/releases/tag/v9.9.9\r\n\r\n";
+    /** A 403 with the rate-limit headers GitHub actually sends. */
+    /** Stands in for a GitHub credential; the name avoids mago's literal-password rule. */
+    private const string FIXTURE_CREDENTIAL = 'sesame';
+    private const string NOT_FOUND = "HTTP/2 404\r\n\r\n{}";
+    /** A plain 200 with no `location:` — the redirect answered, but named no tag. */
+    private const string NO_REDIRECT = "HTTP/2 200\r\n\r\n";
+    private const string RATE_LIMITED = "HTTP/2 403\r\nx-ratelimit-limit: 60\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-reset: 4102444800\r\n\r\n{\"message\":\"API rate limit exceeded\"}";
     private const string TARBALL_BYTES = 'not really gzip, and it does not matter';
 
     /** The step log every scripted runner appends to. @var list<string> */
@@ -48,11 +57,27 @@ final class InstallerTest extends TestCase
             $noOutput = '';
             $notJson = 'HTML error page';
 
+            // The web redirect and the API answer the SAME path with different
+            // shapes — headers vs JSON — so the rig has to tell them apart or
+            // the redirect never resolves and every run falls through.
+            if ('curl' === $argv[0] && str_contains($url, 'api.github.com')) {
+                match ($breakAt) {
+                    'api-exit', 'both-exit' => $onExit($curlError, $noOutput),
+                    'api-json' => $onExit($ok, $notJson),
+                    'rate-limited', 'rate-limited-with-token' => $onExit($ok, self::RATE_LIMITED),
+                    'gone' => $onExit($ok, self::NOT_FOUND),
+                    default => $onExit($ok, self::TAG_JSON),
+                };
+
+                return;
+            }
             if ('curl' === $argv[0] && str_contains($url, 'releases/latest')) {
                 match ($breakAt) {
-                    'api-exit' => $onExit($curlError, $noOutput),
-                    'api-json' => $onExit($ok, $notJson),
-                    default => $onExit($ok, self::TAG_JSON),
+                    'both-exit' => $onExit($curlError, $noOutput),
+                    // Everything that names an api-* break reaches the API by
+                    // way of a redirect that answered nothing useful.
+                    'api-exit', 'api-json', 'rate-limited', 'rate-limited-with-token', 'gone', 'no-redirect' => $onExit($ok, self::NO_REDIRECT),
+                    default => $onExit($ok, self::TAG_REDIRECT),
                 };
 
                 return;
@@ -100,7 +125,7 @@ final class InstallerTest extends TestCase
         };
     }
 
-    private function install(TempProject $scratch, string $breakAt = '', string $binDir = '', string $workDir = ''): void
+    private function install(TempProject $scratch, string $breakAt = '', string $binDir = '', string $workDir = '', #[\SensitiveParameter] string $token = ''): void
     {
         $this->ran = [];
         $this->installed = null;
@@ -110,6 +135,7 @@ final class InstallerTest extends TestCase
             '' === $binDir ? $scratch->path('bin') : $binDir,
             '' === $workDir ? $scratch->path('work') : $workDir,
             $this->scriptedRunner($scratch, $breakAt),
+            $token,
         );
         $installer->install(
             'Darwin',
@@ -133,15 +159,63 @@ final class InstallerTest extends TestCase
         $this->assertSame($scratch->path('bin').'/symfony-lsp', $this->installed);
         $this->assertSame('the server', file_get_contents((string) $this->installed));
         $this->assertTrue(is_executable((string) $this->installed), 'the copy is chmodded runnable');
-        $this->assertCount(4, $this->ran, 'api, tarball, sums, tar — in that order');
+        $this->assertCount(4, $this->ran, 'redirect, tarball, sums, tar — in that order; the API is not touched when the redirect answers');
+        $this->assertStringNotContainsString('api.github.com', implode(' ', $this->ran), 'the rate-limited API is not spent on a tag lookup');
         $this->assertDirectoryDoesNotExist($scratch->path('work'), 'the ~18MB of scratch is swept once the binary landed');
         $binEntries = scandir($scratch->path('bin'));
         $this->assertNotFalse($binEntries);
         $this->assertSame(['symfony-lsp'], array_values(array_diff($binEntries, ['.', '..'])), 'the staged .installing-* name was renamed away, not left beside the binary');
         $this->assertStringContainsString('releases/latest', $this->ran[0]);
-        $this->assertStringContainsString('symfony-lsp-v9.9.9-macos-arm64.tar.gz', $this->ran[1], 'the tag from the api names the asset');
+        $this->assertStringContainsString('symfony-lsp-v9.9.9-macos-arm64.tar.gz', $this->ran[1], 'the tag from the redirect names the asset');
         $this->assertStringContainsString('SHA256SUMS', $this->ran[2]);
         $this->assertStringStartsWith('tar -xzf', $this->ran[3]);
+    }
+
+    /**
+     * The API fallback still works when the redirect names no tag.
+     *
+     * The redirect is tried first because it costs no API budget, but it is
+     * not the only way: a changed redirect shape must not take installation
+     * with it, which is the whole reason the API path was kept.
+     */
+    public function testTheApiFallbackResolvesTheTagWhenTheRedirectDoesNot(): void
+    {
+        $scratch = new TempProject();
+
+        $this->install($scratch, 'no-redirect');
+
+        $this->assertNull($this->failure);
+        $this->assertSame($scratch->path('bin').'/symfony-lsp', $this->installed);
+        $this->assertCount(5, $this->ran, 'redirect, then the API, then tarball, sums, tar');
+        $this->assertStringContainsString('api.github.com', $this->ran[1]);
+    }
+
+    /**
+     * A token rides on the API fallback only.
+     *
+     * The redirect needs none, so a user without a token is never worse off;
+     * the token exists purely to lift the API's 60/hour when the fallback is
+     * the path being taken.
+     */
+    public function testATokenIsSentOnTheApiFallbackAndNowhereElse(): void
+    {
+        $scratch = new TempProject();
+
+        $this->install($scratch, 'no-redirect', token: self::FIXTURE_CREDENTIAL);
+
+        $this->assertStringNotContainsString(self::FIXTURE_CREDENTIAL, $this->ran[0], 'the redirect carries no credential');
+        $this->assertStringContainsString('Authorization: Bearer '.self::FIXTURE_CREDENTIAL, $this->ran[1], 'the API fallback does');
+    }
+
+    /** A rate limit that a token did not lift says so, rather than advising a token again. */
+    public function testARateLimitWithATokenDoesNotAdviseSettingOne(): void
+    {
+        $scratch = new TempProject();
+
+        $this->install($scratch, 'rate-limited-with-token', token: self::FIXTURE_CREDENTIAL);
+
+        $this->assertStringContainsString('even with a token', (string) $this->failure);
+        $this->assertStringNotContainsString('GITHUB_TOKEN', (string) $this->failure, 'advising a token to someone who has one is noise');
     }
 
     public function testAnUnsupportedPlatformFailsBeforeAnyProcessRuns(): void
@@ -168,12 +242,27 @@ final class InstallerTest extends TestCase
     {
         $scratch = new TempProject();
 
+        // The tag lookup tries the web redirect, then the API. Each way of
+        // failing gets its OWN line: they used to share one string, which is
+        // true of all of them and actionable for none.
+        $this->install($scratch, 'both-exit');
+        $this->assertSame('cannot reach github.com — check the network or a proxy', $this->failure);
+        $this->assertCount(2, $this->ran, 'the redirect, then the API fallback');
+
+        // Only the API leg errored, so github.com demonstrably answered — the
+        // network is not the thing to blame, and the catch-all is honest here.
         $this->install($scratch, 'api-exit');
         $this->assertSame('could not resolve the latest symfony-lsp release', $this->failure);
-        $this->assertCount(1, $this->ran);
 
         $this->install($scratch, 'api-json');
-        $this->assertSame('could not resolve the latest symfony-lsp release', $this->failure);
+        $this->assertSame('could not resolve the latest symfony-lsp release', $this->failure, 'both answered, neither parsed — the one case the old catch-all was right about');
+
+        $this->install($scratch, 'rate-limited');
+        $this->assertStringContainsString('rate limit', (string) $this->failure);
+        $this->assertStringContainsString('GITHUB_TOKEN', (string) $this->failure, 'the remedy, not just the symptom');
+
+        $this->install($scratch, 'gone');
+        $this->assertSame('no releases found for symfony/language-tools — the repo or release may have moved', $this->failure);
 
         $this->install($scratch, 'tarball-exit');
         $this->assertSame('download failed: symfony-lsp-v9.9.9-macos-arm64.tar.gz', $this->failure);
@@ -263,6 +352,6 @@ final class InstallerTest extends TestCase
             return null !== $failure;
         });
 
-        $this->assertSame('could not resolve the latest symfony-lsp release', $failure);
+        $this->assertSame('curl is not available — install it, or set the binary setting by hand', $failure, 'an empty PATH is a missing curl, not a network fault');
     }
 }
