@@ -209,6 +209,47 @@ final class IdeSymfonyLspPluginTest extends TestCase
     }
 
     /**
+     * There is an Update command, and it installs.
+     *
+     * The menu can only GREY an entry, never hide it, so the single "Install
+     * Server" sat there unchanged after installing — reading as though nothing
+     * had happened — and there was no update affordance at all: re-running
+     * install WAS the update, which nobody could be expected to guess. Two
+     * commands now share one action, each shown when it applies.
+     */
+    public function testUpdateIsItsOwnCommandAndPerformsTheInstall(): void
+    {
+        $home = new TempProject();
+        putenv('PORTA_HOME='.$home->dir);
+        $project = new TempProject([
+            't.twig' => "x\n",
+            'stubs/.keep' => '',
+            '.porta.json' => json_encode(['enabledPlugins' => ['symfony-lsp']]),
+        ]);
+        self::stubDownloadTools($project);
+        $installed = $home->dir.'/.porta/bin/symfony-lsp';
+
+        $this->runIde(
+            $project,
+            $project->path('t.twig'),
+            [
+                300 => function ($tui, $terminal, $ide) use ($installed): void {
+                    $registry = Services::resolve($ide, CommandRegistry::class);
+                    $this->assertTrue($registry->has('symfony-lsp:install'));
+                    $this->assertTrue($registry->has('symfony-lsp:update'), 'an update affordance exists at all');
+                    $this->assertFileDoesNotExist($installed);
+
+                    // The update command is not a stub: it drives the same
+                    // download the install command does.
+                    $registry->run('symfony-lsp:update');
+                    $this->awaitPainted($tui, $terminal, 'symfony-lsp installed:');
+                    $this->assertFileExists($installed);
+                },
+            ],
+        );
+    }
+
+    /**
      * A SECOND install relaunches the server — the upgrade case.
      *
      * The first install changes the resolved map (with no binary the plugin

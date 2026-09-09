@@ -67,7 +67,7 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
             );
         }
 
-        $api->registerCommand('install', 'Symfony LSP: Install Server', function () use ($api, $binDir): void {
+        $download = function () use ($api, $binDir): void {
             if (null === $binDir) {
                 $api->notify($api->trans('symfony-lsp install failed: %why%', ['%why%' => 'no home directory to install into']), ToastSeverity::Error, 4.0);
 
@@ -114,7 +114,18 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
                     $api->notify($api->trans('symfony-lsp install failed: %why%', ['%why%' => $why]), ToastSeverity::Error, 4.0);
                 },
             );
-        });
-        $api->addMenuItem('install');
+        };
+
+        // Two commands over one action, because the menu can only GREY an
+        // entry, never hide it: an "Install Server" that stays put after
+        // installing reads as though nothing happened, and there was no
+        // update affordance at all — re-running install WAS the update, which
+        // nobody could be expected to guess. Whichever one applies is the
+        // enabled one.
+        $installed = $this->binaryAvailable($api);
+        $api->registerCommand('install', 'Symfony LSP: Install Server', $download);
+        $api->registerCommand('update', 'Symfony LSP: Update Server', $download);
+        $api->addMenuItem('install', static fn (): bool => !$installed());
+        $api->addMenuItem('update', $installed);
     }
 };
