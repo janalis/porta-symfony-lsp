@@ -97,13 +97,16 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
                 php_uname('m'),
                 function (string $path) use ($api): void {
                     $this->installing = false;
-                    // Clear the setting rather than persisting $path: the
-                    // .porta.json this writes travels with the project, and a
-                    // machine-specific absolute path would shadow teammates'
-                    // own copies. The write (even of the same value) is also
-                    // what relaunches the LSP live — resolved through the
-                    // ~/.porta/bin fallback from here on.
-                    $api->changeSetting('binary', '');
+                    // Relaunch explicitly rather than by writing a setting.
+                    // The old trick wrote binary:'' purely for the reconfigure
+                    // side effect, which put a key for a machine-global
+                    // install into a file that travels with the project — and
+                    // only ever worked on the FIRST install: an upgrade
+                    // resolves to byte-identical argv, so the pool's
+                    // identical-map skip declined and the old process kept
+                    // serving. The binary is found through the ~/.porta/bin
+                    // fallback either way, so nothing needs writing.
+                    $api->relaunchLanguageServer();
                     $api->notify($api->trans('symfony-lsp installed: %path%', ['%path%' => $path]), ToastSeverity::Success, 4.0);
                 },
                 function (string $why) use ($api): void {

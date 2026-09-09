@@ -159,9 +159,15 @@ final class IdeSymfonyLspPluginTest extends TestCase
      * runnable script wrapping the mock LSP server, so the post-install
      * relaunch has something real to talk to.
      */
-    private static function stubDownloadTools(TempProject $project): void
+    private static function stubDownloadTools(TempProject $project, string $logName = ''): void
     {
-        $mock = \dirname(__DIR__, levels: 3).'/tests/Support/mock-lsp-server.php';
+        // With $logName the landed server LOGS every message, so a test can
+        // count `initialize`s — one per launch, which is how a RELAUNCH is
+        // observed at all.
+        $mock = '' === $logName
+            ? \dirname(__DIR__, levels: 3).'/tests/Support/mock-lsp-server.php'
+            : \dirname(__DIR__, levels: 3).'/tests/Support/logging-lsp-server.php';
+        $logArg = '' === $logName ? '' : ' \\"'.$project->path($logName).'\\"';
         $curl = <<<'PHP'
             $args = array_slice($argv, 1);
             $out = null;
@@ -189,7 +195,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
             // tar -xzf <tarball> -C <dir>
             \$dir = \$argv[4].'/'.basename(\$argv[2], '.tar.gz');
             mkdir(\$dir, 0o755, true);
-            file_put_contents(\$dir.'/symfony-lsp', "#!/bin/sh\\nexec \\"".PHP_BINARY."\\" \\"{$mock}\\"\\n");
+            file_put_contents(\$dir.'/symfony-lsp', "#!/bin/sh\\nif [ \\"\\$1\\" = --version ]; then echo 'Symfony Language Tools 9.9.9'; exit 0; fi\\nexec \\"".PHP_BINARY."\\" \\"{$mock}\\"{$logArg}\\n");
             exit(0);
             PHP;
         foreach (['curl' => $curl, 'tar' => $tar] as $name => $body) {
@@ -200,6 +206,63 @@ final class IdeSymfonyLspPluginTest extends TestCase
         file_put_contents($project->path('fake.tar.gz'), data: 'opaque bytes standing in for the release archive');
         putenv('FAKE_TARBALL='.$project->path('fake.tar.gz'));
         putenv('PATH='.$project->path('stubs'));
+    }
+
+    /**
+     * A SECOND install relaunches the server — the upgrade case.
+     *
+     * The first install changes the resolved map (with no binary the plugin
+     * resolved no command at all), so it relaunches whatever the mechanism.
+     * An upgrade does not: the new server lands at the same path, so the argv
+     * is byte-identical, `LspSessionPool::reconfigure()`'s identical-map skip
+     * declines to act, and the old process keeps answering from the inode
+     * `rename()` already unlinked — while the toast says it installed.
+     *
+     * Counted in `initialize` messages, one per launch. Written because a
+     * mutation swapping the forced relaunch back to the skipping path passed
+     * every other test in the suite: nothing here covered a second install.
+     */
+    public function testASecondInstallRelaunchesTheRunningServer(): void
+    {
+        $home = new TempProject();
+        putenv('PORTA_HOME='.$home->dir);
+        $project = new TempProject([
+            't.twig' => "x\n",
+            'stubs/.keep' => '',
+            '.porta.json' => json_encode(['enabledPlugins' => ['symfony-lsp']]),
+        ]);
+        self::stubDownloadTools($project, 'lsp.log');
+        $log = $project->path('lsp.log');
+        $launches = 0;
+
+        $this->runIde(
+            $project,
+            $project->path('t.twig'),
+            [
+                300 => function ($tui, $terminal, $ide): void {
+                    $this->awaitPainted($tui, $terminal, 'LSP:no server');
+                    Services::resolve($ide, CommandRegistry::class)->run('symfony-lsp:install');
+                },
+                800 => function ($tui, $terminal, $ide) use ($log, &$launches): void {
+                    $this->awaitPainted($tui, $terminal, 'symfony-lsp installed:');
+                    $this->await(static fn (): bool => [] !== self::initializeOptions($log), what: 'the freshly installed server to launch');
+                    $launches = \count(self::initializeOptions($log));
+
+                    // Install again over the running server: same path, same
+                    // argv, nothing about the resolved map moves.
+                    Services::resolve($ide, CommandRegistry::class)->run('symfony-lsp:install');
+                },
+                1400 => function ($tui, $terminal) use ($log, &$launches): void {
+                    $this->awaitPainted($tui, $terminal, 'symfony-lsp installed:');
+                    $this->await(
+                        static fn (): bool => \count(self::initializeOptions($log)) > $launches,
+                        what: 'the upgraded binary to be launched, not the unlinked one still running',
+                    );
+                },
+            ],
+        );
+
+        $this->addToAssertionCount(1);
     }
 
     public function testInstallCommandDownloadsVerifiesAndRelaunchesTheServer(): void
@@ -239,15 +302,16 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     $this->assertTrue(is_executable($installed), 'the landed binary is runnable');
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp installed:');
 
-                    // The setting is CLEARED, not pointed at the machine-
-                    // specific path: .porta.json travels with the project, and
-                    // an absolute path would shadow teammates' own copies.
-                    /** @var array{plugins: array{'symfony-lsp': array{binary: string}}} $config */
+                    // Installing writes NOTHING to the project's config. It
+                    // used to write binary:'' purely to trigger a reconfigure,
+                    // putting a key for a machine-global install into a file
+                    // that travels with the project.
+                    /** @var array{plugins?: array<string, array<string, mixed>>} $config */
                     $config = json_decode((string) file_get_contents($project->path('.porta.json')), associative: true);
-                    $this->assertSame('', $config['plugins']['symfony-lsp']['binary']);
+                    $this->assertArrayNotHasKey('binary', $config['plugins']['symfony-lsp'] ?? [], 'a machine-global install leaves the shared config alone');
                 },
                 900 => function ($tui, $terminal): void {
-                    // The clearing write relaunched the LSP live, and with the
+                    // The explicit relaunch took effect live, and with the
                     // setting empty and no PATH copy this can ONLY resolve
                     // through the ~/.porta/bin fallback — the discovery step a
                     // mutation of ServerConfig::installed() would kill.
