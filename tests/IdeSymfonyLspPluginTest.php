@@ -6,6 +6,7 @@ namespace Porta\SymfonyLsp\Tests;
 
 use PHPUnit\Framework\TestCase;
 use Porta\Config\CommandRegistry;
+use Porta\Ide;
 use Porta\Tests\Support\ClearsPortaLsp;
 use Porta\Tests\Support\NavigatesSettings;
 use Porta\Tests\Support\PreservesPath;
@@ -14,6 +15,8 @@ use Porta\Tests\Support\Services;
 use Porta\Tests\Support\TempProject;
 use Porta\Tests\Support\UsesBundledPlugins;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
+use Symfony\Component\Tui\Terminal\VirtualTerminal;
+use Symfony\Component\Tui\Tui;
 
 /**
  * The symfony-lsp bundled plugin through a real IDE: it serves the languages
@@ -107,7 +110,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
             $project,
             $project->path('t.twig'),
             [
-                300 => function ($tui, $terminal) use ($log): void {
+                300 => function (Tui $tui, VirtualTerminal $terminal) use ($log): void {
                     // The twig buffer's didOpen launches the server; the wire
                     // log is the on-disk effect to await, not the status bar.
                     $this->await(static fn (): bool => [] !== self::initializeOptions($log), what: 'the first initialize to reach the wire log');
@@ -119,7 +122,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     $this->awaitPainted($tui, $terminal, 'LSP:symfony-lsp');
                     $this->assertStringContainsString('LSP:symfony-lsp', AnsiUtils::stripAnsiCodes($terminal->getOutput()), 'the status bar names the plugin server');
                 },
-                500 => function ($tui, $terminal, $ide): void {
+                500 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide): void {
                     Services::resolve($ide, CommandRegistry::class)->run('ide_settings');
                     $tui->handleInput("\t"); // form → nav
                     $this->selectSettingsSection($tui->getById('settings-nav'), 'plugin:symfony-lsp');
@@ -233,7 +236,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
             $project,
             $project->path('t.twig'),
             [
-                300 => function ($tui, $terminal, $ide) use ($installed): void {
+                300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide) use ($installed): void {
                     $registry = Services::resolve($ide, CommandRegistry::class);
                     $this->assertTrue($registry->has('symfony-lsp:install'));
                     $this->assertTrue($registry->has('symfony-lsp:update'), 'an update affordance exists at all');
@@ -280,11 +283,11 @@ final class IdeSymfonyLspPluginTest extends TestCase
             $project,
             $project->path('t.twig'),
             [
-                300 => function ($tui, $terminal, $ide): void {
+                300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide): void {
                     $this->awaitPainted($tui, $terminal, 'LSP:no server');
                     Services::resolve($ide, CommandRegistry::class)->run('symfony-lsp:install');
                 },
-                800 => function ($tui, $terminal, $ide) use ($log, &$launches): void {
+                800 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide) use ($log, &$launches): void {
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp installed:');
                     $this->await(static fn (): bool => [] !== self::initializeOptions($log), what: 'the freshly installed server to launch');
                     $launches = \count(self::initializeOptions($log));
@@ -293,7 +296,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     // argv, nothing about the resolved map moves.
                     Services::resolve($ide, CommandRegistry::class)->run('symfony-lsp:install');
                 },
-                1400 => function ($tui, $terminal) use ($log, &$launches): void {
+                1400 => function (Tui $tui, VirtualTerminal $terminal) use ($log, &$launches): void {
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp installed:');
                     $this->await(
                         static fn (): bool => \count(self::initializeOptions($log)) > $launches,
@@ -322,7 +325,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
             $project,
             $project->path('t.twig'),
             [
-                300 => function ($tui, $terminal, $ide): void {
+                300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide): void {
                     $this->awaitPainted($tui, $terminal, 'LSP:no server');
                     $registry = Services::resolve($ide, CommandRegistry::class);
                     $registry->run('symfony-lsp:install');
@@ -331,7 +334,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     $registry->run('symfony-lsp:install');
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp: already running');
                 },
-                600 => function ($tui, $terminal) use ($installed, $project): void {
+                600 => function (Tui $tui, VirtualTerminal $terminal) use ($installed, $project): void {
                     // Terminal-state, not success-only: a broken chain fires
                     // the failure toast, and this must fail fast on it rather
                     // than burn the budget as a bare timeout.
@@ -351,7 +354,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     $config = \json_decode((string) \file_get_contents($project->path('.porta.json')), associative: true);
                     $this->assertArrayNotHasKey('binary', $config['plugins']['symfony-lsp'] ?? [], 'a machine-global install leaves the shared config alone');
                 },
-                900 => function ($tui, $terminal): void {
+                900 => function (Tui $tui, VirtualTerminal $terminal): void {
                     // The explicit relaunch took effect live, and with the
                     // setting empty and no PATH copy this can ONLY resolve
                     // through the ~/.porta/bin fallback — the discovery step a
@@ -382,7 +385,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 $project,
                 $project->path('a.php'),
                 [
-                    300 => function ($tui, $terminal, $ide): void {
+                    300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide): void {
                         Services::resolve($ide, CommandRegistry::class)->run('symfony-lsp:install');
                         // The toast box truncates long messages; await the
                         // head of the cause, not the full sentence.
@@ -410,7 +413,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
             $project,
             $project->path('a.php'),
             [
-                300 => function ($tui, $terminal, $ide): void {
+                300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide): void {
                     Services::resolve($ide, CommandRegistry::class)->run('symfony-lsp:install');
                     // With no curl to spawn, the cause is a missing curl —
                     // not a network fault, and not the old catch-all that
@@ -436,7 +439,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
             $project,
             $project->path('t.twig'),
             [
-                300 => function ($tui, $terminal): void {
+                300 => function (Tui $tui, VirtualTerminal $terminal): void {
                     $this->awaitPainted($tui, $terminal, 'LSP:no server');
                     $this->assertStringContainsString('LSP:no server', AnsiUtils::stripAnsiCodes($terminal->getOutput()), 'twig is out of the claim, so nothing serves it');
                 },
@@ -459,7 +462,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
             $project,
             $project->path('a.php'),
             [
-                300 => function ($tui, $terminal): void {
+                300 => function (Tui $tui, VirtualTerminal $terminal): void {
                     $this->awaitPainted($tui, $terminal, 'LSP:none (enable a PHP server in Settings)');
                     $this->assertStringContainsString('LSP:none (enable a PHP server in Settings)', AnsiUtils::stripAnsiCodes($terminal->getOutput()));
                 },
