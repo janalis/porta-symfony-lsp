@@ -44,7 +44,7 @@ final class Release
     public function latestTag(string $json): ?string
     {
         /** @var array{tag_name?: mixed}|bool|int|float|string|null $decoded */
-        $decoded = json_decode($json, associative: true);
+        $decoded = \json_decode($json, associative: true);
         $tag = \is_array($decoded) && \is_string($decoded['tag_name'] ?? null) ? $decoded['tag_name'] : '';
 
         return self::validTag($tag);
@@ -60,13 +60,13 @@ final class Release
     public function tagFromLocation(string $headers): ?string
     {
         $matches = [];
-        if (1 > (int) preg_match_all('~^location:\s*(\S+)~mi', $headers, $matches)) {
+        if (1 > (int) \preg_match_all('~^location:\s*(\S+)~mi', $headers, $matches)) {
             return null;
         }
-        $last = (string) end($matches[1]);
-        $tag = substr($last, (int) strrpos($last, needle: '/') + 1);
+        $last = (string) \end($matches[1]);
+        $tag = \substr($last, (int) \strrpos($last, needle: '/') + 1);
 
-        return str_contains($last, '/releases/tag/') ? self::validTag($tag) : null;
+        return \str_contains($last, '/releases/tag/') ? self::validTag($tag) : null;
     }
 
     /**
@@ -97,7 +97,7 @@ final class Release
      */
     private static function validTag(string $tag): ?string
     {
-        return 1 === preg_match('/^v[0-9][0-9A-Za-z.\-]*$/', $tag) ? $tag : null;
+        return 1 === \preg_match('/^v[0-9][0-9A-Za-z.\-]*$/', $tag) ? $tag : null;
     }
 
     public function asset(string $tag, string $platform): string
@@ -121,9 +121,9 @@ final class Release
      */
     public function expectedSha(string $sums, string $asset): ?string
     {
-        foreach (explode("\n", $sums) as $line) {
-            $parts = preg_split('/\s+/', trim($line));
-            if (\is_array($parts) && 2 === \count($parts) && $asset === ltrim($parts[1], characters: '*') && 1 === preg_match('/^[0-9a-f]{64}$/', $parts[0])) {
+        foreach (\explode("\n", $sums) as $line) {
+            $parts = \preg_split('/\s+/', \trim($line));
+            if (\is_array($parts) && 2 === \count($parts) && \ltrim($parts[1], characters: '*') === $asset && 1 === \preg_match('/^[0-9a-f]{64}$/', $parts[0])) {
                 return $parts[0];
             }
         }

@@ -53,8 +53,8 @@ final class InstallerTest extends TestCase
     private function scriptedRunner(TempProject $scratch, string $breakAt = ''): \Closure
     {
         return function (array $argv, string $cwd, \Closure $onExit) use ($scratch, $breakAt): void {
-            $this->ran[] = implode(' ', $argv);
-            $url = $argv[array_key_last($argv)];
+            $this->ran[] = \implode(' ', $argv);
+            $url = $argv[\array_key_last($argv)];
             $curlError = 22;
             $ok = 0;
             $noOutput = '';
@@ -63,7 +63,7 @@ final class InstallerTest extends TestCase
             // The web redirect and the API answer the SAME path with different
             // shapes — headers vs JSON — so the rig has to tell them apart or
             // the redirect never resolves and every run falls through.
-            if ('curl' === $argv[0] && str_contains($url, 'api.github.com')) {
+            if ('curl' === $argv[0] && \str_contains($url, 'api.github.com')) {
                 match ($breakAt) {
                     'api-exit', 'both-exit' => $onExit($curlError, $noOutput),
                     'api-json' => $onExit($ok, $notJson),
@@ -74,7 +74,7 @@ final class InstallerTest extends TestCase
 
                 return;
             }
-            if ('curl' === $argv[0] && str_contains($url, 'releases/latest')) {
+            if ('curl' === $argv[0] && \str_contains($url, 'releases/latest')) {
                 match ($breakAt) {
                     'both-exit' => $onExit($curlError, $noOutput),
                     // Everything that names an api-* break reaches the API by
@@ -92,7 +92,7 @@ final class InstallerTest extends TestCase
                     return;
                 }
                 if ('tarball-missing' !== $breakAt) {
-                    file_put_contents($argv[3], self::TARBALL_BYTES);
+                    \file_put_contents($argv[3], self::TARBALL_BYTES);
                 }
                 $onExit($ok, $noOutput);
 
@@ -101,8 +101,8 @@ final class InstallerTest extends TestCase
             if ('curl' === $argv[0]) { // SHA256SUMS
                 match ($breakAt) {
                     'sums-exit' => $onExit($curlError, $noOutput),
-                    'sums-mismatch' => $onExit($ok, str_repeat('00', times: 32).'  symfony-lsp-v9.9.9-macos-arm64.tar.gz'),
-                    default => $onExit($ok, hash('sha256', self::TARBALL_BYTES)."  symfony-lsp-v9.9.9-macos-arm64.tar.gz\n"),
+                    'sums-mismatch' => $onExit($ok, \str_repeat('00', times: 32).'  symfony-lsp-v9.9.9-macos-arm64.tar.gz'),
+                    default => $onExit($ok, \hash('sha256', self::TARBALL_BYTES)."  symfony-lsp-v9.9.9-macos-arm64.tar.gz\n"),
                 };
 
                 return;
@@ -126,11 +126,11 @@ final class InstallerTest extends TestCase
                 // Mirror the real archive's shape: the binary sits beside
                 // license files, a subdirectory, and (on some platforms) links.
                 $dir = $argv[4].'/symfony-lsp-v9.9.9-macos-arm64';
-                mkdir($dir.'/THIRD_PARTY_LICENSES', recursive: true);
-                file_put_contents($dir.'/symfony-lsp', data: 'the server');
-                file_put_contents($dir.'/LICENSE', data: 'MIT');
-                file_put_contents($dir.'/THIRD_PARTY_LICENSES/dep.txt', data: 'MIT');
-                symlink($dir.'/LICENSE', $dir.'/LICENSE.link');
+                \mkdir($dir.'/THIRD_PARTY_LICENSES', recursive: true);
+                \file_put_contents($dir.'/symfony-lsp', data: 'the server');
+                \file_put_contents($dir.'/LICENSE', data: 'MIT');
+                \file_put_contents($dir.'/THIRD_PARTY_LICENSES/dep.txt', data: 'MIT');
+                \symlink($dir.'/LICENSE', $dir.'/LICENSE.link');
             }
             $onExit($ok, $noOutput);
         };
@@ -168,14 +168,14 @@ final class InstallerTest extends TestCase
 
         $this->assertNull($this->failure);
         $this->assertSame($scratch->path('bin').'/symfony-lsp', $this->installed);
-        $this->assertSame('the server', file_get_contents((string) $this->installed));
-        $this->assertTrue(is_executable((string) $this->installed), 'the copy is chmodded runnable');
+        $this->assertSame('the server', \file_get_contents((string) $this->installed));
+        $this->assertTrue(\is_executable((string) $this->installed), 'the copy is chmodded runnable');
         $this->assertCount(5, $this->ran, 'redirect, tarball, sums, tar, then the binary proving it runs; the API is not touched when the redirect answers');
-        $this->assertStringNotContainsString('api.github.com', implode(' ', $this->ran), 'the rate-limited API is not spent on a tag lookup');
+        $this->assertStringNotContainsString('api.github.com', \implode(' ', $this->ran), 'the rate-limited API is not spent on a tag lookup');
         $this->assertDirectoryDoesNotExist($scratch->path('work'), 'the ~18MB of scratch is swept once the binary landed');
-        $binEntries = scandir($scratch->path('bin'));
+        $binEntries = \scandir($scratch->path('bin'));
         $this->assertNotFalse($binEntries);
-        $this->assertSame(['symfony-lsp'], array_values(array_diff($binEntries, ['.', '..'])), 'the staged .installing-* name was renamed away, not left beside the binary');
+        $this->assertSame(['symfony-lsp'], \array_values(\array_diff($binEntries, ['.', '..'])), 'the staged .installing-* name was renamed away, not left beside the binary');
         $this->assertStringContainsString('releases/latest', $this->ran[0]);
         $this->assertStringContainsString('symfony-lsp-v9.9.9-macos-arm64.tar.gz', $this->ran[1], 'the tag from the redirect names the asset');
         $this->assertStringContainsString('SHA256SUMS', $this->ran[2]);
@@ -195,17 +195,17 @@ final class InstallerTest extends TestCase
     {
         $scratch = new TempProject();
         $target = $scratch->path('bin').'/symfony-lsp';
-        mkdir($scratch->path('bin'), permissions: 0o755, recursive: true);
-        file_put_contents($target, self::WORKING_COPY);
+        \mkdir($scratch->path('bin'), permissions: 0o755, recursive: true);
+        \file_put_contents($target, self::WORKING_COPY);
 
         $this->install($scratch, 'bad-binary');
 
         $this->assertNull($this->installed);
         $this->assertStringContainsString('does not run here', (string) $this->failure);
-        $this->assertSame(self::WORKING_COPY, file_get_contents($target), 'the working copy is untouched');
-        $binEntries = scandir($scratch->path('bin'));
+        $this->assertSame(self::WORKING_COPY, \file_get_contents($target), 'the working copy is untouched');
+        $binEntries = \scandir($scratch->path('bin'));
         $this->assertNotFalse($binEntries);
-        $this->assertSame(['symfony-lsp'], array_values(array_diff($binEntries, ['.', '..'])), 'and the staged file is swept, not left beside it');
+        $this->assertSame(['symfony-lsp'], \array_values(\array_diff($binEntries, ['.', '..'])), 'and the staged file is swept, not left beside it');
     }
 
     /**
@@ -354,13 +354,13 @@ final class InstallerTest extends TestCase
     public function testAnUnwritableBinDirFailsBeforeStaging(): void
     {
         $scratch = new TempProject();
-        mkdir($scratch->path('bin'), permissions: 0o755, recursive: true);
-        chmod($scratch->path('bin'), permissions: 0o555);
+        \mkdir($scratch->path('bin'), permissions: 0o755, recursive: true);
+        \chmod($scratch->path('bin'), permissions: 0o555);
 
         try {
             $this->install($scratch);
         } finally {
-            chmod($scratch->path('bin'), permissions: 0o755);
+            \chmod($scratch->path('bin'), permissions: 0o755);
         }
 
         $this->assertNull($this->installed);
@@ -370,7 +370,7 @@ final class InstallerTest extends TestCase
     public function testAnUnwritableTargetFailsTheCopy(): void
     {
         $scratch = new TempProject();
-        mkdir($scratch->path('bin/symfony-lsp'), recursive: true); // a DIRECTORY squatting the target name
+        \mkdir($scratch->path('bin/symfony-lsp'), recursive: true); // a DIRECTORY squatting the target name
 
         $this->install($scratch);
 
@@ -397,7 +397,7 @@ final class InstallerTest extends TestCase
         // wiring end to end without touching the network. The finder IS faked,
         // and has to be: the probe would otherwise stop this before anything
         // spawned, and the default runner would go untested.
-        putenv('PATH=/nonexistent');
+        \putenv('PATH=/nonexistent');
         $scratch = new TempProject();
         $failure = null;
         $installer = new Installer(
@@ -480,14 +480,14 @@ final class InstallerTest extends TestCase
         $live = $tmp.'/'.Installer::SCRATCH_PREFIX.'405';
         $unrelated = $tmp.'/someone-elses-cache';
         foreach ([$abandoned, $live, $unrelated] as $dir) {
-            mkdir($dir, permissions: 0o755, recursive: true);
-            file_put_contents($dir.'/symfony-lsp-v9.9.9-macos-arm64.tar.gz', self::TARBALL_BYTES);
+            \mkdir($dir, permissions: 0o755, recursive: true);
+            \file_put_contents($dir.'/symfony-lsp-v9.9.9-macos-arm64.tar.gz', self::TARBALL_BYTES);
         }
-        $longAgo = time() - 7200;
-        touch($abandoned.'/symfony-lsp-v9.9.9-macos-arm64.tar.gz', $longAgo);
-        touch($abandoned, $longAgo);
-        touch($unrelated.'/symfony-lsp-v9.9.9-macos-arm64.tar.gz', $longAgo);
-        touch($unrelated, $longAgo);
+        $longAgo = \time() - 7200;
+        \touch($abandoned.'/symfony-lsp-v9.9.9-macos-arm64.tar.gz', $longAgo);
+        \touch($abandoned, $longAgo);
+        \touch($unrelated.'/symfony-lsp-v9.9.9-macos-arm64.tar.gz', $longAgo);
+        \touch($unrelated, $longAgo);
 
         $this->install($scratch, workDir: $tmp.'/'.Installer::SCRATCH_PREFIX.'406');
 
@@ -502,13 +502,13 @@ final class InstallerTest extends TestCase
     {
         $scratch = new TempProject();
         $workDir = $scratch->path('tmp').'/'.Installer::SCRATCH_PREFIX.'404';
-        mkdir($workDir.'/symfony-lsp-v9.9.9-macos-arm64', permissions: 0o755, recursive: true);
+        \mkdir($workDir.'/symfony-lsp-v9.9.9-macos-arm64', permissions: 0o755, recursive: true);
         $leftover = $workDir.'/symfony-lsp-v9.9.9-macos-arm64/symfony-lsp';
-        file_put_contents($leftover, data: 'a half-extracted binary from the last life of this pid');
-        $longAgo = time() - 7200;
-        touch($leftover, $longAgo);
-        touch(\dirname($leftover), $longAgo);
-        touch($workDir, $longAgo);
+        \file_put_contents($leftover, data: 'a half-extracted binary from the last life of this pid');
+        $longAgo = \time() - 7200;
+        \touch($leftover, $longAgo);
+        \touch(\dirname($leftover), $longAgo);
+        \touch($workDir, $longAgo);
 
         $this->install($scratch, 'tar-empty', workDir: $workDir);
 

@@ -112,7 +112,7 @@ final class Installer
         }
         $this->reapStaleScratch();
         // @mago-expect lint:no-error-control-operator -- a blocked scratch dir is an expected failure path; its warning must reach the flash, not the error log.
-        if (!is_dir($this->workDir) && !@mkdir($this->workDir, permissions: 0o755, recursive: true)) {
+        if (!\is_dir($this->workDir) && !@\mkdir($this->workDir, permissions: 0o755, recursive: true)) {
             $onFailure('cannot create '.$this->workDir);
 
             return;
@@ -157,10 +157,10 @@ final class Installer
     private function reapStaleScratch(): void
     {
         $parent = \dirname($this->workDir);
-        $entries = is_dir($parent) ? scandir($parent) : false;
+        $entries = \is_dir($parent) ? \scandir($parent) : false;
         foreach (false === $entries ? [] : $entries as $entry) {
             $path = $parent.'/'.$entry;
-            if (!str_starts_with($entry, self::SCRATCH_PREFIX) || !is_dir($path) || self::touchedRecently($path)) {
+            if (!\str_starts_with($entry, self::SCRATCH_PREFIX) || !\is_dir($path) || self::touchedRecently($path)) {
                 continue;
             }
 
@@ -171,15 +171,15 @@ final class Installer
     /** Whether $dir or anything directly in it was written to within {@see STALE_AFTER}. */
     private static function touchedRecently(string $dir): bool
     {
-        $cutoff = time() - self::STALE_AFTER;
-        $newest = (int) filemtime($dir);
-        $entries = scandir($dir);
+        $cutoff = \time() - self::STALE_AFTER;
+        $newest = (int) \filemtime($dir);
+        $entries = \scandir($dir);
         foreach (false === $entries ? [] : $entries as $entry) {
             if ('.' === $entry || '..' === $entry) {
                 continue;
             }
 
-            $newest = max($newest, (int) filemtime($dir.'/'.$entry));
+            $newest = \max($newest, (int) \filemtime($dir.'/'.$entry));
         }
 
         return $newest > $cutoff;
@@ -227,7 +227,7 @@ final class Installer
     {
         $argv = ['curl', '-sS', '-D', '-', $this->release->apiUrl()];
         if ('' !== $this->token) {
-            array_splice($argv, offset: 1, length: 0, replacement: ['-H', 'Authorization: Bearer '.$this->token]);
+            \array_splice($argv, offset: 1, length: 0, replacement: ['-H', 'Authorization: Bearer '.$this->token]);
         }
 
         ($this->run)($argv, $this->workDir, function (int $code, string $response) use ($redirectCode, $onTag): void {
@@ -257,12 +257,12 @@ final class Installer
             return 'cannot reach github.com — check the network or a proxy';
         }
         $headers = self::headers($response);
-        if (str_contains($headers, '403') && preg_match('~^x-ratelimit-remaining:\s*0~mi', $headers)) {
+        if (\str_contains($headers, '403') && \preg_match('~^x-ratelimit-remaining:\s*0~mi', $headers)) {
             return '' !== $token
                 ? 'GitHub rate limit reached even with a token — try again shortly'
                 : 'GitHub rate limit reached (60/hour per IP) — set GITHUB_TOKEN, or retry in '.self::minutesUntilReset($headers).' min';
         }
-        if (str_contains($headers, '404')) {
+        if (\str_contains($headers, '404')) {
             return 'no releases found for symfony/language-tools — the repo or release may have moved';
         }
 
@@ -274,25 +274,25 @@ final class Installer
     {
         $matches = [];
 
-        return 1 === preg_match('~^x-ratelimit-reset:\s*([0-9]+)~mi', $headers, $matches)
-            ? max(1, (int) ceil(((int) $matches[1] - time()) / 60))
+        return 1 === \preg_match('~^x-ratelimit-reset:\s*([0-9]+)~mi', $headers, $matches)
+            ? \max(1, (int) \ceil(((int) $matches[1] - \time()) / 60))
             : 1;
     }
 
     /** The header block of a `-D -` response — everything before the first blank line. */
     private static function headers(string $response): string
     {
-        $end = strpos($response, needle: "\r\n\r\n");
+        $end = \strpos($response, needle: "\r\n\r\n");
 
-        return false === $end ? $response : substr($response, offset: 0, length: $end);
+        return false === $end ? $response : \substr($response, offset: 0, length: $end);
     }
 
     /** The body of a `-D -` response — everything after the last header block. */
     private static function body(string $response): string
     {
-        $end = strrpos($response, needle: "\r\n\r\n");
+        $end = \strrpos($response, needle: "\r\n\r\n");
 
-        return false === $end ? $response : substr($response, $end + 4);
+        return false === $end ? $response : \substr($response, $end + 4);
     }
 
     /** @param \Closure(string): void $onSuccess @param \Closure(string): void $onFailure */
@@ -302,14 +302,14 @@ final class Installer
         $tarball = $this->workDir.'/'.$asset;
 
         ($this->run)(['curl', '-fsSL', '-o', $tarball, $this->release->assetUrl($tag, $asset)], $this->workDir, function (int $code) use ($tag, $asset, $tarball, $onSuccess, $onFailure): void {
-            if (0 !== $code || !is_file($tarball)) {
+            if (0 !== $code || !\is_file($tarball)) {
                 $onFailure('download failed: '.$asset);
 
                 return;
             }
             ($this->run)(['curl', '-fsSL', $this->release->sumsUrl($tag)], $this->workDir, function (int $code, string $sums) use ($asset, $tarball, $onSuccess, $onFailure): void {
                 $expected = 0 === $code ? $this->release->expectedSha($sums, $asset) : null;
-                if (null === $expected || hash_file('sha256', $tarball) !== $expected) {
+                if (null === $expected || \hash_file('sha256', $tarball) !== $expected) {
                     $onFailure('checksum verification failed: '.$asset);
 
                     return;
@@ -324,14 +324,14 @@ final class Installer
     {
         ($this->run)(['tar', '-xzf', $tarball, '-C', $this->workDir], $this->workDir, function (int $code) use ($asset, $onSuccess, $onFailure): void {
             // The archive holds `<asset minus .tar.gz>/symfony-lsp`.
-            $extracted = $this->workDir.'/'.substr($asset, offset: 0, length: -\strlen('.tar.gz')).'/symfony-lsp';
-            if (0 !== $code || !is_file($extracted)) {
+            $extracted = $this->workDir.'/'.\substr($asset, offset: 0, length: -\strlen('.tar.gz')).'/symfony-lsp';
+            if (0 !== $code || !\is_file($extracted)) {
                 $onFailure('could not extract '.$asset);
 
                 return;
             }
             // @mago-expect lint:no-error-control-operator -- an unwritable destination is an expected failure path; its warning must reach the flash, not the error log.
-            if (!is_dir($this->binDir) && !@mkdir($this->binDir, permissions: 0o755, recursive: true)) {
+            if (!\is_dir($this->binDir) && !@\mkdir($this->binDir, permissions: 0o755, recursive: true)) {
                 $onFailure('cannot create '.$this->binDir);
 
                 return;
@@ -343,11 +343,11 @@ final class Installer
             // server's binary in place fails with ETXTBSY on Linux and can
             // hand a racing relaunch a torn executable.
             $target = $this->binDir.'/symfony-lsp';
-            $staged = $target.'.installing-'.(int) getmypid();
+            $staged = $target.'.installing-'.(int) \getmypid();
             // @mago-expect lint:no-error-control-operator -- same: a squatted target name is reported through onFailure.
-            $copied = @copy($extracted, $staged);
+            $copied = @\copy($extracted, $staged);
             // @mago-expect lint:no-error-control-operator -- same: a squatted target name is reported through onFailure.
-            $prepared = $copied && @chmod($staged, permissions: 0o755);
+            $prepared = $copied && @\chmod($staged, permissions: 0o755);
             if (!$prepared) {
                 $this->removeTree($staged);
                 $onFailure('cannot write '.$target);
@@ -368,7 +368,7 @@ final class Installer
                     return;
                 }
                 // @mago-expect lint:no-error-control-operator -- a squatted target name is reported through onFailure.
-                if (!@rename($staged, $target)) {
+                if (!@\rename($staged, $target)) {
                     $this->removeTree($staged);
                     $onFailure('cannot write '.$target);
 
@@ -389,16 +389,16 @@ final class Installer
      */
     private function removeTree(string $path): void
     {
-        if (is_file($path) || is_link($path)) {
+        if (\is_file($path) || \is_link($path)) {
             // @mago-expect lint:no-error-control-operator -- best-effort sweep; an unremovable leftover just stays.
-            @unlink($path);
+            @\unlink($path);
 
             return;
         }
-        if (!is_dir($path)) {
+        if (!\is_dir($path)) {
             return;
         }
-        $entries = scandir($path);
+        $entries = \scandir($path);
         foreach (false === $entries ? [] : $entries as $entry) {
             if (!('.' !== $entry && '..' !== $entry)) {
                 continue;
@@ -407,6 +407,6 @@ final class Installer
             $this->removeTree($path.'/'.$entry);
         }
         // @mago-expect lint:no-error-control-operator -- best-effort sweep; an unremovable leftover just stays.
-        @rmdir($path);
+        @\rmdir($path);
     }
 }

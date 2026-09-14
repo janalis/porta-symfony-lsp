@@ -31,7 +31,7 @@ final class ServerConfigTest extends TestCase
 
     public function testTheDefaultLanguagesSettingClaimsExactlyTheRegisteredSet(): void
     {
-        $claimed = array_values(array_filter(array_map(trim(...), explode(',', ServerConfig::DEFAULT_LANGUAGES))));
+        $claimed = \array_values(\array_filter(\array_map(trim(...), \explode(',', ServerConfig::DEFAULT_LANGUAGES))));
 
         $this->assertSame(ServerConfig::LANGUAGES, $claimed, 'the setting default and the registered set must not drift apart');
     }
@@ -51,12 +51,12 @@ final class ServerConfigTest extends TestCase
     {
         $config = new ServerConfig();
         $scratch = new TempProject();
-        mkdir($scratch->path('bin'));
-        file_put_contents($scratch->path('bin/symfony-lsp'), data: "#!/bin/sh\nexit 0\n");
-        chmod($scratch->path('bin/symfony-lsp'), permissions: 0o755);
+        \mkdir($scratch->path('bin'));
+        \file_put_contents($scratch->path('bin/symfony-lsp'), data: "#!/bin/sh\nexit 0\n");
+        \chmod($scratch->path('bin/symfony-lsp'), permissions: 0o755);
         $live = $scratch->path('live');
-        file_put_contents($live, data: "#!/bin/sh\nexit 0\n");
-        chmod($live, permissions: 0o755);
+        \file_put_contents($live, data: "#!/bin/sh\nexit 0\n");
+        \chmod($live, permissions: 0o755);
 
         $this->assertSame($live, $config->binary($live, $scratch->path('bin')), 'an existing configured/discovered binary wins');
         $this->assertSame($scratch->path('bin').'/symfony-lsp', $config->binary(null, $scratch->path('bin')), 'nothing configured: the installed copy serves');

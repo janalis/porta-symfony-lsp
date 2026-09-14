@@ -72,7 +72,7 @@ final class ServerConfig
      */
     public function binary(?string $configured, ?string $binDir): ?string
     {
-        if (null !== $configured && (!str_contains($configured, '/') || is_executable($configured))) {
+        if (null !== $configured && (!\str_contains($configured, '/') || \is_executable($configured))) {
             return $configured;
         }
 
@@ -87,7 +87,7 @@ final class ServerConfig
     {
         $path = $binDir.'/symfony-lsp';
 
-        return is_executable($path) ? $path : null;
+        return \is_executable($path) ? $path : null;
     }
 
     /**
@@ -100,7 +100,7 @@ final class ServerConfig
     public function initializationOptions(string $phpCommand, string $environment, bool $runtimeIndexing): array
     {
         $php = Argv::split($phpCommand);
-        $environment = trim($environment);
+        $environment = \trim($environment);
 
         return [
             'phpCommand' => [] === $php ? ['php'] : $php,

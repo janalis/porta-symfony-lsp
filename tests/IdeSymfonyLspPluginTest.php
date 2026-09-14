@@ -38,15 +38,15 @@ final class IdeSymfonyLspPluginTest extends TestCase
 
     protected function setUp(): void
     {
-        putenv('PATH=/nonexistent');
-        $home = getenv('PORTA_HOME');
+        \putenv('PATH=/nonexistent');
+        $home = \getenv('PORTA_HOME');
         $this->savedPortaHome = false === $home ? null : $home;
     }
 
     protected function tearDown(): void
     {
-        putenv('PORTA_HOME'.(null === $this->savedPortaHome ? '' : '='.$this->savedPortaHome));
-        putenv('FAKE_TARBALL');
+        \putenv('PORTA_HOME'.(null === $this->savedPortaHome ? '' : '='.$this->savedPortaHome));
+        \putenv('FAKE_TARBALL');
     }
 
     /**
@@ -62,11 +62,11 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $server = \dirname(__DIR__, levels: 3).'/tests/Support/logging-lsp-server.php';
         $stub = "#!/bin/sh\nexec \"".\PHP_BINARY."\" \"{$server}\" \"{$project->path($logName)}\"\n";
         $binary = $project->path('symfony-lsp-stub');
-        file_put_contents($binary, $stub);
-        chmod($binary, permissions: 0o755);
-        file_put_contents(
+        \file_put_contents($binary, $stub);
+        \chmod($binary, permissions: 0o755);
+        \file_put_contents(
             $project->path('.porta.json'),
-            json_encode([
+            \json_encode([
                 'enabledPlugins' => ['symfony-lsp'],
                 'plugins' => ['symfony-lsp' => ['binary' => $binary, ...$settings]],
             ]),
@@ -83,13 +83,13 @@ final class IdeSymfonyLspPluginTest extends TestCase
      */
     private static function initializeOptions(string $log): array
     {
-        if (!is_file($log)) {
+        if (!\is_file($log)) {
             return [];
         }
         $options = [];
-        foreach (array_filter(explode("\n", (string) file_get_contents($log))) as $line) {
+        foreach (\array_filter(\explode("\n", (string) \file_get_contents($log))) as $line) {
             /** @var array{method?: string, params?: array{initializationOptions?: array<string, mixed>}}|null $message */
-            $message = json_decode($line, associative: true);
+            $message = \json_decode($line, associative: true);
             if (\is_array($message) && 'initialize' === ($message['method'] ?? null)) {
                 $options[] = $message['params']['initializationOptions'] ?? [];
             }
@@ -200,12 +200,12 @@ final class IdeSymfonyLspPluginTest extends TestCase
             PHP;
         foreach (['curl' => $curl, 'tar' => $tar] as $name => $body) {
             $path = $project->path('stubs/'.$name);
-            file_put_contents($path, '#!'.\PHP_BINARY."\n<?php\n".$body."\n");
-            chmod($path, permissions: 0o755);
+            \file_put_contents($path, '#!'.\PHP_BINARY."\n<?php\n".$body."\n");
+            \chmod($path, permissions: 0o755);
         }
-        file_put_contents($project->path('fake.tar.gz'), data: 'opaque bytes standing in for the release archive');
-        putenv('FAKE_TARBALL='.$project->path('fake.tar.gz'));
-        putenv('PATH='.$project->path('stubs'));
+        \file_put_contents($project->path('fake.tar.gz'), data: 'opaque bytes standing in for the release archive');
+        \putenv('FAKE_TARBALL='.$project->path('fake.tar.gz'));
+        \putenv('PATH='.$project->path('stubs'));
     }
 
     /**
@@ -220,11 +220,11 @@ final class IdeSymfonyLspPluginTest extends TestCase
     public function testUpdateIsItsOwnCommandAndPerformsTheInstall(): void
     {
         $home = new TempProject();
-        putenv('PORTA_HOME='.$home->dir);
+        \putenv('PORTA_HOME='.$home->dir);
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
         ]);
         self::stubDownloadTools($project);
         $installed = $home->dir.'/.porta/bin/symfony-lsp';
@@ -266,11 +266,11 @@ final class IdeSymfonyLspPluginTest extends TestCase
     public function testASecondInstallRelaunchesTheRunningServer(): void
     {
         $home = new TempProject();
-        putenv('PORTA_HOME='.$home->dir);
+        \putenv('PORTA_HOME='.$home->dir);
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
         ]);
         self::stubDownloadTools($project, 'lsp.log');
         $log = $project->path('lsp.log');
@@ -309,11 +309,11 @@ final class IdeSymfonyLspPluginTest extends TestCase
     public function testInstallCommandDownloadsVerifiesAndRelaunchesTheServer(): void
     {
         $home = new TempProject();
-        putenv('PORTA_HOME='.$home->dir);
+        \putenv('PORTA_HOME='.$home->dir);
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
         ]);
         self::stubDownloadTools($project);
         $installed = $home->dir.'/.porta/bin/symfony-lsp';
@@ -336,11 +336,11 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     // the failure toast, and this must fail fast on it rather
                     // than burn the budget as a bare timeout.
                     $this->await(
-                        static fn (): bool => is_file($installed) || str_contains(AnsiUtils::stripAnsiCodes($terminal->getOutput()), 'install failed'),
+                        static fn (): bool => \is_file($installed) || \str_contains(AnsiUtils::stripAnsiCodes($terminal->getOutput()), 'install failed'),
                         what: 'the install to land the binary or report why not',
                     );
                     $this->assertFileExists($installed, 'the install chain reported a failure instead of landing the binary');
-                    $this->assertTrue(is_executable($installed), 'the landed binary is runnable');
+                    $this->assertTrue(\is_executable($installed), 'the landed binary is runnable');
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp installed:');
 
                     // Installing writes NOTHING to the project's config. It
@@ -348,7 +348,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     // putting a key for a machine-global install into a file
                     // that travels with the project.
                     /** @var array{plugins?: array<string, array<string, mixed>>} $config */
-                    $config = json_decode((string) file_get_contents($project->path('.porta.json')), associative: true);
+                    $config = \json_decode((string) \file_get_contents($project->path('.porta.json')), associative: true);
                     $this->assertArrayNotHasKey('binary', $config['plugins']['symfony-lsp'] ?? [], 'a machine-global install leaves the shared config alone');
                 },
                 900 => function ($tui, $terminal): void {
@@ -369,13 +369,13 @@ final class IdeSymfonyLspPluginTest extends TestCase
         // No PORTA_HOME (tearDown restores it) and no HOME: there is no
         // user-owned landing spot, and the shared /tmp is deliberately not
         // one — the command must refuse, not degrade.
-        $savedHome = getenv('HOME');
-        putenv('PORTA_HOME');
-        putenv('HOME');
+        $savedHome = \getenv('HOME');
+        \putenv('PORTA_HOME');
+        \putenv('HOME');
         try {
             $project = new TempProject([
                 'a.php' => "<?php\n",
-                '.porta.json' => json_encode(['enabledPlugins' => ['symfony-lsp']]),
+                '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
             ]);
 
             $this->runIde(
@@ -391,7 +391,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 ],
             );
         } finally {
-            putenv('HOME'.(false === $savedHome ? '' : '='.$savedHome));
+            \putenv('HOME'.(false === $savedHome ? '' : '='.$savedHome));
         }
 
         $this->addToAssertionCount(1);
@@ -403,7 +403,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         // the failure must surface as a toast — not wedge the busy flag.
         $project = new TempProject([
             'a.php' => "<?php\n",
-            '.porta.json' => json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
         ]);
 
         $this->runIde(
@@ -452,7 +452,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         // return null for every language, so php keeps its settings hint.
         $project = new TempProject([
             'a.php' => "<?php\n",
-            '.porta.json' => json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
         ]);
 
         $this->runIde(

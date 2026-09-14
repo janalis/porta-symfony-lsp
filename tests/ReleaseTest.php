@@ -58,11 +58,11 @@ final class ReleaseTest extends TestCase
     public function testExpectedShaFindsTheAssetLineAndRejectsTheRest(): void
     {
         $release = new Release();
-        $sha = str_repeat('ab', times: 32);
-        $sums = "{$sha}  one.tar.gz\n".str_repeat('cd', times: 32)."  *two.tar.gz\nnot a sums line\nshort0  three.tar.gz\n";
+        $sha = \str_repeat('ab', times: 32);
+        $sums = "{$sha}  one.tar.gz\n".\str_repeat('cd', times: 32)."  *two.tar.gz\nnot a sums line\nshort0  three.tar.gz\n";
 
         $this->assertSame($sha, $release->expectedSha($sums, 'one.tar.gz'));
-        $this->assertSame(str_repeat('cd', times: 32), $release->expectedSha($sums, 'two.tar.gz'), 'the binary-mode * marker is stripped');
+        $this->assertSame(\str_repeat('cd', times: 32), $release->expectedSha($sums, 'two.tar.gz'), 'the binary-mode * marker is stripped');
         $this->assertNull($release->expectedSha($sums, 'three.tar.gz'), 'a malformed hash is not trusted');
         $this->assertNull($release->expectedSha($sums, 'absent.tar.gz'));
         $this->assertNull($release->expectedSha('', 'one.tar.gz'));
