@@ -50,9 +50,9 @@ final class InstallerTest extends TestCase
      *
      * @return \Closure(list<string>, string, \Closure(int, string): void): void
      */
-    private function scriptedRunner(TempProject $scratch, string $breakAt = ''): \Closure
+    private function scriptedRunner(string $breakAt = ''): \Closure
     {
-        return function (array $argv, string $cwd, \Closure $onExit) use ($scratch, $breakAt): void {
+        return function (array $argv, string $cwd, \Closure $onExit) use ($breakAt): void {
             $this->ran[] = \implode(' ', $argv);
             $url = \array_last($argv);
             $curlError = 22;
@@ -145,7 +145,7 @@ final class InstallerTest extends TestCase
             new Release(),
             '' === $binDir ? $scratch->path('bin') : $binDir,
             '' === $workDir ? $scratch->path('work') : $workDir,
-            $this->scriptedRunner($scratch, $breakAt),
+            $this->scriptedRunner($breakAt),
             $token,
         );
         $installer->install(
@@ -260,7 +260,7 @@ final class InstallerTest extends TestCase
         $scratch = new TempProject();
         $this->ran = [];
         $this->failure = null;
-        $installer = new Installer(new Release(), $scratch->path('bin'), $scratch->path('work'), $this->scriptedRunner($scratch));
+        $installer = new Installer(new Release(), $scratch->path('bin'), $scratch->path('work'), $this->scriptedRunner());
 
         $installer->install(
             'Windows',
@@ -383,7 +383,7 @@ final class InstallerTest extends TestCase
         // must shrug, not warn: it runs inside a process-exit callback where
         // a throw would wedge the chain.
         $scratch = new TempProject();
-        $installer = new Installer(new Release(), $scratch->path('bin'), $scratch->path('work'), $this->scriptedRunner($scratch));
+        $installer = new Installer(new Release(), $scratch->path('bin'), $scratch->path('work'), $this->scriptedRunner());
 
         Probe::invoke($installer, 'removeTree', $scratch->path('never-created'));
 
@@ -438,7 +438,7 @@ final class InstallerTest extends TestCase
             new Release(),
             $scratch->path('bin'),
             $scratch->path('work'),
-            $this->scriptedRunner($scratch),
+            $this->scriptedRunner(),
             findTool: static fn (string $tool): ?string => $tool === $absent ? null : '/usr/bin/'.$tool,
         );
         $failure = null;
