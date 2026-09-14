@@ -146,8 +146,8 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     // server's initialize now grants workspace trust.
                     $this->await(static fn (): bool => \count(self::initializeOptions($log)) >= 2, what: 'the relaunched server\'s second initialize');
                     $options = self::initializeOptions($log)[1];
-                    $this->assertSame(true, $options['runtimeIndexing'] ?? null, 'the toggled setting reached the relaunch');
-                    $this->assertSame(true, $options['workspaceTrust'] ?? null, 'runtime indexing grants trust');
+                    $this->assertTrue($options['runtimeIndexing'] ?? null, 'the toggled setting reached the relaunch');
+                    $this->assertTrue($options['workspaceTrust'] ?? null, 'runtime indexing grants trust');
                 },
             ],
         );
