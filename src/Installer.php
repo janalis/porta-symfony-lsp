@@ -400,7 +400,7 @@ final readonly class Installer
         }
         $entries = \scandir($path);
         foreach (false === $entries ? [] : $entries as $entry) {
-            if (!('.' !== $entry && '..' !== $entry)) {
+            if ('.' === $entry || '..' === $entry) {
                 continue;
             }
 
