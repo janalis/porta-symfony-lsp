@@ -17,7 +17,7 @@ use Symfony\Component\Process\ExecutableFinder;
  * Exactly one of $onSuccess / $onFailure fires, once — the caller's
  * single-flight flag is released in whichever it is.
  */
-final class Installer
+final readonly class Installer
 {
     /**
      * The scratch directory's name, minus the per-process suffix the caller
@@ -39,10 +39,10 @@ final class Installer
     private const array TOOLS = ['curl', 'tar'];
 
     /** @var \Closure(list<string>, string, \Closure(int, string): void): void */
-    private readonly \Closure $run;
+    private \Closure $run;
 
     /** @var \Closure(string): ?string */
-    private readonly \Closure $findTool;
+    private \Closure $findTool;
 
     /**
      * Two docblocks used to sit here, and PHP reads only the last: everything
@@ -61,12 +61,12 @@ final class Installer
      *        PATH — inject a fake to test a machine without curl or without tar
      */
     public function __construct(
-        private readonly Release $release,
-        private readonly string $binDir,
-        private readonly string $workDir,
+        private Release $release,
+        private string $binDir,
+        private string $workDir,
         ?\Closure $run = null,
         #[\SensitiveParameter]
-        private readonly string $token = '',
+        private string $token = '',
         ?\Closure $findTool = null,
     ) {
         $this->findTool = $findTool ?? static fn (string $tool): ?string => new ExecutableFinder()->find($tool);

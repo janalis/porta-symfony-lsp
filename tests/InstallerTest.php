@@ -54,7 +54,7 @@ final class InstallerTest extends TestCase
     {
         return function (array $argv, string $cwd, \Closure $onExit) use ($scratch, $breakAt): void {
             $this->ran[] = \implode(' ', $argv);
-            $url = $argv[\array_key_last($argv)];
+            $url = \array_last($argv);
             $curlError = 22;
             $ok = 0;
             $noOutput = '';
