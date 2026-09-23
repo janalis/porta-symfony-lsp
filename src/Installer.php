@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace Porta\SymfonyLsp;
 
-use Porta\Support\AsyncProcess;
 use Symfony\Component\Process\ExecutableFinder;
 
 /**
  * Downloads the symfony-lsp release binary for this machine: resolve the
  * latest tag from GitHub, fetch the platform archive, verify it against the
  * release's SHA256SUMS, extract, and land the binary at `<binDir>/symfony-lsp`.
- * Every step is asynchronous (curl/tar through $run, {@see AsyncProcess} by
- * default), so the UI never blocks on the network.
+ * Every step is asynchronous (curl/tar through $run, {@see Runner::default()}
+ * by default), so the UI never blocks on the network.
  *
  * Exactly one of $onSuccess / $onFailure fires, once — the caller's
  * single-flight flag is released in whichever it is.
@@ -29,7 +28,7 @@ final readonly class Installer
     /**
      * How old an abandoned scratch directory must be before a later install
      * sweeps it. Comfortably past every step's own ceiling
-     * ({@see AsyncProcess::EXTERNAL_TOOL_TIMEOUT}, 300s), because the one
+     * ({@see \Porta\Support\AsyncProcess::EXTERNAL_TOOL_TIMEOUT}, 300s), because the one
      * thing this must never do is delete a download a SECOND Porta window is
      * still running.
      */
@@ -38,11 +37,22 @@ final readonly class Installer
     /** The external tools every install shells out to, in the order they are needed. */
     private const array TOOLS = ['curl', 'tar'];
 
-    /** @var \Closure(list<string>, string, \Closure(int, string): void): void */
+    /**
+     * Passed wherever a step has nothing worth watching as it arrives, which
+     * is every step but the ~9MB download. Spelled out rather than defaulted
+     * because a closure TYPE cannot say "optional", and an argument silently
+     * left off is how the runner contract would drift from its fakes.
+     */
+    private const null NO_CHUNKS = null;
+
+    /** @var \Closure(list<string>, string, \Closure(int, string): void, (\Closure(string): void)|null): void */
     private \Closure $run;
 
     /** @var \Closure(string): ?string */
     private \Closure $findTool;
+
+    /** @var \Closure(InstallStep, int): void */
+    private \Closure $onProgress;
 
     /**
      * Two docblocks used to sit here, and PHP reads only the last: everything
@@ -52,13 +62,17 @@ final readonly class Installer
      * @param string $workDir scratch space for the download and extraction; the
      *        name must start with {@see SCRATCH_PREFIX} so an abandoned one is
      *        recognisable to the next install's sweep
-     * @param (\Closure(list<string>, string, \Closure(int, string): void): void)|null $run
-     *        (argv, cwd, onExit(exit code, stdout)) — inject a fake to test without processes
+     * @param (\Closure(list<string>, string, \Closure(int, string): void, (\Closure(string): void)|null): void)|null $run
+     *        (argv, cwd, onExit(exit code, stdout), onChunk(stdout as it arrives)) — inject a fake
+     *        to test without processes
      * @param string $token a GitHub token for the API fallback, or '' for none.
      *                      Never logged, never toasted — it only ever reaches
      *                      curl's argv.
      * @param (\Closure(string): ?string)|null $findTool resolves an external tool on the
      *        PATH — inject a fake to test a machine without curl or without tar
+     * @param (\Closure(InstallStep, int): void)|null $onProgress where the install has got to, and
+     *        how far through the download it is (0 for every other step). Between the opening
+     *        flash and the closing toast there was nothing on screen at all
      */
     public function __construct(
         private Release $release,
@@ -68,24 +82,23 @@ final readonly class Installer
         #[\SensitiveParameter]
         private string $token = '',
         ?\Closure $findTool = null,
+        ?\Closure $onProgress = null,
     ) {
         $this->findTool = $findTool ?? static fn (string $tool): ?string => new ExecutableFinder()->find($tool);
-        $this->run = $run ?? /** @param list<string> $argv */ static function (array $argv, string $cwd, \Closure $onExit): void {
-            // start() returning false means nothing was spawned and no
-            // callback will ever fire — report it as a failed exit instead of
-            // leaving the chain (and the caller's busy flag) hanging forever.
-            if (!new AsyncProcess($argv, $cwd, timeout: AsyncProcess::EXTERNAL_TOOL_TIMEOUT)->start($onExit)) {
-                $noOutput = '';
-                $onExit(-1, $noOutput);
-            }
-        };
+        $this->onProgress = $onProgress ?? static function (InstallStep $step, int $percent): void {};
+        // {@see Runner::default()} carries the reasoning, including why a
+        // refused spawn has to become a failed exit rather than silence.
+        $this->run = $run ?? Runner::default();
     }
 
     /**
-     * @param \Closure(string): void $onSuccess receives the installed binary's path
-     * @param \Closure(string): void $onFailure receives what went wrong, flash-sized
+     * @param \Closure(string, string): void $onSuccess receives the installed binary's path and the version
+     *        it reports for itself ('' when its `--version` line is not the expected shape)
+     * @param \Closure(string): void         $onFailure receives what went wrong, flash-sized
+     * @param string|null                    $tag a release already resolved by {@see latestTag()}, so an
+     *        update that just compared versions does not pay for the lookup twice; null resolves it here
      */
-    public function install(string $osFamily, string $machine, \Closure $onSuccess, \Closure $onFailure): void
+    public function install(string $osFamily, string $machine, \Closure $onSuccess, \Closure $onFailure, ?string $tag = null): void
     {
         // Every failure sweeps the scratch too: a retried install must not
         // park another ~18MB per attempt, and a checksum-rejected archive
@@ -118,7 +131,14 @@ final readonly class Installer
             return;
         }
 
-        $this->resolveTag(function (?string $tag, string $why) use ($platform, $onSuccess, $onFailure): void {
+        if (null !== $tag) {
+            $this->download($tag, $platform, $onSuccess, $onFailure);
+
+            return;
+        }
+
+        $this->report(InstallStep::Resolving);
+        $this->resolveTag($this->workDir, function (?string $tag, string $why) use ($platform, $onSuccess, $onFailure): void {
             if (null === $tag) {
                 $onFailure($why);
 
@@ -126,6 +146,35 @@ final readonly class Installer
             }
             $this->download($tag, $platform, $onSuccess, $onFailure);
         });
+    }
+
+    /**
+     * The latest release tag, on its own — the cheap half of an update.
+     *
+     * "Update Server" used to be the install closure under another name: it
+     * downloaded ~9MB unconditionally, because nothing knew what was already
+     * installed. Asking for the tag first costs one redirect and usually ends
+     * the operation there.
+     *
+     * No scratch directory and no tar: neither resolver writes to its cwd
+     * (`-o /dev/null`, and the API answer goes to stdout), so this must not
+     * create — or sweep — anything. curl alone is the requirement.
+     *
+     * @param \Closure(?string, string): void $onTag tag, or null with a reason
+     */
+    public function latestTag(\Closure $onTag): void
+    {
+        if (null === ($this->findTool)('curl')) {
+            // Through a local, like every other $onTag call here: a literal
+            // second argument to a closure reads as an unnamed flag to mago,
+            // and a closure has no parameter name to name it by.
+            $noCurl = 'curl is not available — install it, or set the binary setting by hand';
+            $onTag(null, $noCurl);
+
+            return;
+        }
+
+        $this->resolveTag(\sys_get_temp_dir(), $onTag);
     }
 
     /** The first of {@see TOOLS} that is not on the PATH, or null when both are. */
@@ -202,44 +251,55 @@ final readonly class Installer
      *
      * @param \Closure(?string, string): void $onTag tag, or null with a reason
      */
-    private function resolveTag(\Closure $onTag): void
+    private function resolveTag(string $cwd, \Closure $onTag): void
     {
-        ($this->run)(['curl', '-sSL', '-o', '/dev/null', '-D', '-', $this->release->latestUrl()], $this->workDir, function (int $code, string $headers) use ($onTag): void {
-            $tag = 0 === $code ? $this->release->tagFromLocation($headers) : null;
-            if (null !== $tag) {
-                $noReason = '';
-                $onTag($tag, $noReason);
+        ($this->run)(
+            ['curl', '-sSL', '-o', '/dev/null', '-D', '-', $this->release->latestUrl()],
+            $cwd,
+            function (int $code, string $headers) use ($cwd, $onTag): void {
+                $tag = 0 === $code ? $this->release->tagFromLocation($headers) : null;
+                if (null !== $tag) {
+                    $noReason = '';
+                    $onTag($tag, $noReason);
 
-                return;
-            }
-            $this->resolveTagFromApi($code, $onTag);
-        });
+                    return;
+                }
+                $this->resolveTagFromApi($cwd, $code, $onTag);
+            },
+            self::NO_CHUNKS,
+        );
     }
 
     /**
      * The API fallback, used only when the redirect did not answer.
      *
+     * @param string                          $cwd          where curl runs; nothing is written there
      * @param int                             $redirectCode the web attempt's exit code, so a total
      *                                                      network failure is not blamed on GitHub
      * @param \Closure(?string, string): void $onTag
      */
-    private function resolveTagFromApi(int $redirectCode, \Closure $onTag): void
+    private function resolveTagFromApi(string $cwd, int $redirectCode, \Closure $onTag): void
     {
         $argv = ['curl', '-sS', '-D', '-', $this->release->apiUrl()];
         if ('' !== $this->token) {
             \array_splice($argv, offset: 1, length: 0, replacement: ['-H', 'Authorization: Bearer '.$this->token]);
         }
 
-        ($this->run)($argv, $this->workDir, function (int $code, string $response) use ($redirectCode, $onTag): void {
-            $tag = 0 === $code ? $this->release->latestTag(self::body($response)) : null;
-            if (null !== $tag) {
-                $noReason = '';
-                $onTag($tag, $noReason);
+        ($this->run)(
+            $argv,
+            $cwd,
+            function (int $code, string $response) use ($redirectCode, $onTag): void {
+                $tag = 0 === $code ? $this->release->latestTag(self::body($response)) : null;
+                if (null !== $tag) {
+                    $noReason = '';
+                    $onTag($tag, $noReason);
 
-                return;
-            }
-            $onTag(null, self::why($code, $redirectCode, $response, $this->token));
-        });
+                    return;
+                }
+                $onTag(null, self::why($code, $redirectCode, $response, $this->token));
+            },
+            self::NO_CHUNKS,
+        );
     }
 
     /**
@@ -295,89 +355,148 @@ final readonly class Installer
         return false === $end ? $response : \substr($response, $end + 4);
     }
 
-    /** @param \Closure(string): void $onSuccess @param \Closure(string): void $onFailure */
+    /** @param \Closure(string, string): void $onSuccess @param \Closure(string): void $onFailure */
     private function download(string $tag, string $platform, \Closure $onSuccess, \Closure $onFailure): void
     {
         $asset = $this->release->asset($tag, $platform);
         $tarball = $this->workDir.'/'.$asset;
 
-        ($this->run)(['curl', '-fsSL', '-o', $tarball, $this->release->assetUrl($tag, $asset)], $this->workDir, function (int $code) use ($tag, $asset, $tarball, $onSuccess, $onFailure): void {
-            if (0 !== $code || !\is_file($tarball)) {
-                $onFailure('download failed: '.$asset);
-
-                return;
-            }
-            ($this->run)(['curl', '-fsSL', $this->release->sumsUrl($tag)], $this->workDir, function (int $code, string $sums) use ($asset, $tarball, $onSuccess, $onFailure): void {
-                $expected = 0 === $code ? $this->release->expectedSha($sums, $asset) : null;
-                if (null === $expected || \hash_file('sha256', $tarball) !== $expected) {
-                    $onFailure('checksum verification failed: '.$asset);
+        $this->report(InstallStep::Downloading);
+        // No `-s` and `--stderr -`: silent is what made a ~9MB fetch look like
+        // a hang. curl's meter goes to stderr, which is routed to stdout here
+        // because the BODY is going to a file (`-o`), so stdout is free — and
+        // the runner streams stdout, which is the only channel that arrives
+        // before the process exits. `-o` stays at index 2 either way.
+        $argv = ['curl', '-fL', '-o', $tarball, '--progress-bar', '--stderr', '-', $this->release->assetUrl($tag, $asset)];
+        ($this->run)(
+            $argv,
+            $this->workDir,
+            function (int $code) use ($tag, $asset, $tarball, $onSuccess, $onFailure): void {
+                if (0 !== $code || !\is_file($tarball)) {
+                    $onFailure('download failed: '.$asset);
 
                     return;
                 }
-                $this->extract($asset, $tarball, $onSuccess, $onFailure);
-            });
-        });
+                $this->report(InstallStep::Verifying);
+                ($this->run)(
+                    ['curl', '-fsSL', $this->release->sumsUrl($tag)],
+                    $this->workDir,
+                    function (int $code, string $sums) use ($asset, $tarball, $onSuccess, $onFailure): void {
+                        $expected = 0 === $code ? $this->release->expectedSha($sums, $asset) : null;
+                        if (null === $expected || \hash_file('sha256', $tarball) !== $expected) {
+                            $onFailure('checksum verification failed: '.$asset);
+
+                            return;
+                        }
+                        $this->extract($asset, $tarball, $onSuccess, $onFailure);
+                    },
+                    self::NO_CHUNKS,
+                );
+            },
+            function (string $chunk): void {
+                $this->report(InstallStep::Downloading, self::percentOf($chunk));
+            },
+        );
     }
 
-    /** @param \Closure(string): void $onSuccess @param \Closure(string): void $onFailure */
+    /**
+     * The last whole percentage curl's meter names in $chunk, or 0.
+     *
+     * A chunk is whatever arrived, so it can hold several carriage-returned
+     * redraws or half of one. The LAST match is the current figure; an
+     * unparseable chunk reports 0, which reads as "downloading" with no number
+     * rather than as a wrong one.
+     */
+    private static function percentOf(string $chunk): int
+    {
+        $matches = [];
+
+        return 1 === \preg_match('/([0-9]+)(?:\.[0-9]+)?%(?!.*%)/s', $chunk, $matches) ? (int) $matches[1] : 0;
+    }
+
+    /** @param int $percent how far through the download; 0 for every other step */
+    private function report(InstallStep $step, int $percent = 0): void
+    {
+        ($this->onProgress)($step, $percent);
+    }
+
+    /** @param \Closure(string, string): void $onSuccess @param \Closure(string): void $onFailure */
     private function extract(string $asset, string $tarball, \Closure $onSuccess, \Closure $onFailure): void
     {
-        ($this->run)(['tar', '-xzf', $tarball, '-C', $this->workDir], $this->workDir, function (int $code) use ($asset, $onSuccess, $onFailure): void {
-            // The archive holds `<asset minus .tar.gz>/symfony-lsp`.
-            $extracted = $this->workDir.'/'.\substr($asset, offset: 0, length: -\strlen('.tar.gz')).'/symfony-lsp';
-            if (0 !== $code || !\is_file($extracted)) {
-                $onFailure('could not extract '.$asset);
-
-                return;
-            }
-            // @mago-expect lint:no-error-control-operator -- an unwritable destination is an expected failure path; its warning must reach the flash, not the error log.
-            if (!\is_dir($this->binDir) && !@\mkdir($this->binDir, permissions: 0o755, recursive: true)) {
-                $onFailure('cannot create '.$this->binDir);
-
-                return;
-            }
-            // copy into binDir first (the scratch dir and the destination are
-            // routinely on different filesystems, so a direct rename could
-            // not cross), then rename over the target: same-filesystem rename
-            // is atomic and replaces a BUSY file — overwriting a running
-            // server's binary in place fails with ETXTBSY on Linux and can
-            // hand a racing relaunch a torn executable.
-            $target = $this->binDir.'/symfony-lsp';
-            $staged = $target.'.installing-'.(int) \getmypid();
-            // @mago-expect lint:no-error-control-operator -- same: a squatted target name is reported through onFailure.
-            $copied = @\copy($extracted, $staged);
-            // @mago-expect lint:no-error-control-operator -- same: a squatted target name is reported through onFailure.
-            $prepared = $copied && @\chmod($staged, permissions: 0o755);
-            if (!$prepared) {
-                $this->removeTree($staged);
-                $onFailure('cannot write '.$target);
-
-                return;
-            }
-            // Run it BEFORE the rename, never after. The rename replaces a
-            // working server, so a binary that cannot execute — wrong
-            // architecture, a truncated download that still matched a stale
-            // checksum, a Gatekeeper refusal — must be caught while the old
-            // copy is still the one on disk. Landing it and reporting success
-            // is how an install "succeeds" and leaves an IDE with no server.
-            ($this->run)([$staged, '--version'], $this->workDir, function (int $code) use ($staged, $target, $onSuccess, $onFailure): void {
-                if (0 !== $code) {
-                    $this->removeTree($staged);
-                    $onFailure('the downloaded symfony-lsp does not run here — wrong architecture, or blocked by the system');
+        $this->report(InstallStep::Extracting);
+        ($this->run)(
+            ['tar', '-xzf', $tarball, '-C', $this->workDir],
+            $this->workDir,
+            function (int $code) use ($asset, $onSuccess, $onFailure): void {
+                // The archive holds `<asset minus .tar.gz>/symfony-lsp`.
+                $extracted = $this->workDir.'/'.\substr($asset, offset: 0, length: -\strlen('.tar.gz')).'/symfony-lsp';
+                if (0 !== $code || !\is_file($extracted)) {
+                    $onFailure('could not extract '.$asset);
 
                     return;
                 }
-                // @mago-expect lint:no-error-control-operator -- a squatted target name is reported through onFailure.
-                if (!@\rename($staged, $target)) {
+                // @mago-expect lint:no-error-control-operator -- an unwritable destination is an expected failure path; its warning must reach the flash, not the error log.
+                if (!\is_dir($this->binDir) && !@\mkdir($this->binDir, permissions: 0o755, recursive: true)) {
+                    $onFailure('cannot create '.$this->binDir);
+
+                    return;
+                }
+                // copy into binDir first (the scratch dir and the destination are
+                // routinely on different filesystems, so a direct rename could
+                // not cross), then rename over the target: same-filesystem rename
+                // is atomic and replaces a BUSY file — overwriting a running
+                // server's binary in place fails with ETXTBSY on Linux and can
+                // hand a racing relaunch a torn executable.
+                $target = $this->binDir.'/symfony-lsp';
+                $staged = $target.'.installing-'.(int) \getmypid();
+                // @mago-expect lint:no-error-control-operator -- same: a squatted target name is reported through onFailure.
+                $copied = @\copy($extracted, $staged);
+                // @mago-expect lint:no-error-control-operator -- same: a squatted target name is reported through onFailure.
+                $prepared = $copied && @\chmod($staged, permissions: 0o755);
+                if (!$prepared) {
                     $this->removeTree($staged);
                     $onFailure('cannot write '.$target);
 
                     return;
                 }
-                $this->removeTree($this->workDir);
-                $onSuccess($target);
-            });
-        });
+                // Run it BEFORE the rename, never after. The rename replaces a
+                // working server, so a binary that cannot execute — wrong
+                // architecture, a truncated download that still matched a stale
+                // checksum, a Gatekeeper refusal — must be caught while the old
+                // copy is still the one on disk. Landing it and reporting success
+                // is how an install "succeeds" and leaves an IDE with no server.
+                $this->report(InstallStep::Checking);
+                ($this->run)(
+                    [$staged, '--version'],
+                    $this->workDir,
+                    function (int $code, string $reported) use ($staged, $target, $onSuccess, $onFailure): void {
+                        if (0 !== $code) {
+                            $this->removeTree($staged);
+                            $onFailure('the downloaded symfony-lsp does not run here — wrong architecture, or blocked by the system');
+
+                            return;
+                        }
+                        // @mago-expect lint:no-error-control-operator -- a squatted target name is reported through onFailure.
+                        if (!@\rename($staged, $target)) {
+                            $this->removeTree($staged);
+                            $onFailure('cannot write '.$target);
+
+                            return;
+                        }
+                        $this->removeTree($this->workDir);
+                        // The smoke test already asked the binary what it is; the
+                        // answer used to be dropped on the floor, which is why the
+                        // plugin had no notion of what was installed. A build that
+                        // runs but names itself in some other shape still installs —
+                        // it works, and refusing it over a string would be absurd —
+                        // so the caller gets '' and treats the version as unknown.
+                        $onSuccess($target, $this->release->versionFrom($reported) ?? '');
+                    },
+                    self::NO_CHUNKS,
+                );
+            },
+            self::NO_CHUNKS,
+        );
     }
 
     /**

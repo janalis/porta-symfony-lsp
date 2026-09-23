@@ -7,6 +7,7 @@ namespace Porta\SymfonyLsp\Tests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Porta\SymfonyLsp\Installer;
+use Porta\SymfonyLsp\InstallStep;
 use Porta\SymfonyLsp\Release;
 use Porta\Tests\Support\PreservesPath;
 use Porta\Tests\Support\Probe;
@@ -43,16 +44,20 @@ final class InstallerTest extends TestCase
 
     private ?string $installed = null;
     private ?string $failure = null;
+    private ?string $version = null;
+
+    /** Every progress report, as "Step:percent". @var list<string> */
+    private array $steps = [];
 
     /**
      * A runner that behaves like curl/tar up to $breakAt, then misbehaves as
      * $breakAt says. TempProject-backed paths keep everything auto-cleaned.
      *
-     * @return \Closure(list<string>, string, \Closure(int, string): void): void
+     * @return \Closure(list<string>, string, \Closure(int, string): void, (\Closure(string): void)|null): void
      */
     private function scriptedRunner(string $breakAt = ''): \Closure
     {
-        return function (array $argv, string $cwd, \Closure $onExit) use ($breakAt): void {
+        return function (array $argv, string $cwd, \Closure $onExit, ?\Closure $onChunk = null) use ($breakAt): void {
             $this->ran[] = \implode(' ', $argv);
             $url = \array_last($argv);
             $curlError = 22;
@@ -86,6 +91,9 @@ final class InstallerTest extends TestCase
                 return;
             }
             if ('curl' === $argv[0] && '-o' === ($argv[2] ?? '')) {
+                // curl's own meter, as `--progress-bar --stderr -` delivers
+                // it: carriage-returned redraws, several per read.
+                $onChunk?->__invoke("\r#####                    20.0%\r##########               41.7%");
                 if ('tarball-exit' === $breakAt) {
                     $onExit($curlError, $noOutput);
 
@@ -111,7 +119,13 @@ final class InstallerTest extends TestCase
             // rename so a binary that cannot execute never replaces a working
             // one.
             if ('--version' === ($argv[1] ?? '')) {
-                $onExit('bad-binary' === $breakAt ? 1 : $ok, $noOutput);
+                // The real binary prints its version here, and the installer
+                // reads it: that one line is the plugin's entire record of
+                // what is installed.
+                $onExit(
+                    'bad-binary' === $breakAt ? 1 : $ok,
+                    'nameless-binary' === $breakAt ? 'a fork that does not say' : 'Symfony Language Tools 9.9.9',
+                );
 
                 return;
             }
@@ -136,26 +150,38 @@ final class InstallerTest extends TestCase
         };
     }
 
-    private function install(TempProject $scratch, string $breakAt = '', string $binDir = '', string $workDir = '', #[\SensitiveParameter] string $token = ''): void
+    private function install(TempProject $scratch, string $breakAt = '', string $binDir = '', string $workDir = '', #[\SensitiveParameter] string $token = '', ?string $tag = null): void
+    {
+        $this->installer($scratch, $breakAt, $binDir, $workDir, $token)->install(
+            'Darwin',
+            'arm64',
+            function (string $path, string $version): void {
+                $this->installed = $path;
+                $this->version = $version;
+            },
+            function (string $why): void {
+                $this->failure = $why;
+            },
+            $tag,
+        );
+    }
+
+    private function installer(TempProject $scratch, string $breakAt = '', string $binDir = '', string $workDir = '', #[\SensitiveParameter] string $token = ''): Installer
     {
         $this->ran = [];
         $this->installed = null;
         $this->failure = null;
-        $installer = new Installer(
+        $this->version = null;
+        $this->steps = [];
+
+        return new Installer(
             new Release(),
             '' === $binDir ? $scratch->path('bin') : $binDir,
             '' === $workDir ? $scratch->path('work') : $workDir,
             $this->scriptedRunner($breakAt),
             $token,
-        );
-        $installer->install(
-            'Darwin',
-            'arm64',
-            function (string $path): void {
-                $this->installed = $path;
-            },
-            function (string $why): void {
-                $this->failure = $why;
+            onProgress: function (InstallStep $step, int $percent): void {
+                $this->steps[] = $step->name.':'.$percent;
             },
         );
     }
@@ -181,6 +207,7 @@ final class InstallerTest extends TestCase
         $this->assertStringContainsString('SHA256SUMS', $this->ran[2]);
         $this->assertStringStartsWith('tar -xzf', $this->ran[3]);
         $this->assertStringEndsWith('--version', $this->ran[4], 'the landed binary is asked to run before it replaces anything');
+        $this->assertSame('9.9.9', $this->version, 'the smoke test already asked what this is — the answer used to be dropped on the floor');
     }
 
     /**
@@ -514,5 +541,143 @@ final class InstallerTest extends TestCase
 
         $this->assertSame('could not extract symfony-lsp-v9.9.9-macos-arm64.tar.gz', $this->failure, 'the stale binary was swept, so tar extracting nothing is a miss');
         $this->assertNull($this->installed);
+    }
+
+    /**
+     * A build that runs but names itself in some other shape still installs.
+     *
+     * Refusing a working binary over a string would be absurd; the version is
+     * simply unknown, and an update from an unknown version downloads — the
+     * old behaviour, kept for the one case that earns it.
+     */
+    public function testABinaryThatWillNotNameItselfStillInstalls(): void
+    {
+        $scratch = new TempProject();
+
+        $this->install($scratch, breakAt: 'nameless-binary');
+
+        $this->assertNull($this->failure);
+        $this->assertSame($scratch->path('bin').'/symfony-lsp', $this->installed);
+        $this->assertSame('', $this->version);
+    }
+
+    /**
+     * The cheap half of an update: one redirect, and nothing on disk.
+     *
+     * It must not create the scratch directory or reap its siblings — a
+     * version CHECK that leaves ~/.porta/tmp behind, or that sweeps a
+     * download another window is running, would be a worse bargain than the
+     * unconditional download it replaces. Neither resolver writes to its cwd.
+     */
+    public function testLatestTagCostsOneRequestAndTouchesNoDisk(): void
+    {
+        $scratch = new TempProject();
+        $tag = null;
+        $why = null;
+
+        $this->installer($scratch)->latestTag(static function (?string $resolved, string $reason) use (&$tag, &$why): void {
+            $tag = $resolved;
+            $why = $reason;
+        });
+
+        $this->assertSame('v9.9.9', $tag);
+        $this->assertSame('', $why);
+        $this->assertCount(1, $this->ran, 'the redirect answered; the API budget is not spent');
+        $this->assertStringContainsString('releases/latest', $this->ran[0]);
+        $this->assertDirectoryDoesNotExist($scratch->path('work'), 'a version check creates no scratch');
+    }
+
+    /** tar is not needed to read a tag, but curl is, and it is named. */
+    public function testLatestTagWithoutCurlSaysSo(): void
+    {
+        $scratch = new TempProject();
+        $tag = 'unset';
+        $why = null;
+        $installer = new Installer(
+            new Release(),
+            $scratch->path('bin'),
+            $scratch->path('work'),
+            $this->scriptedRunner(),
+            findTool: static fn (string $tool): ?string => null,
+        );
+
+        $installer->latestTag(static function (?string $resolved, string $reason) use (&$tag, &$why): void {
+            $tag = $resolved;
+            $why = $reason;
+        });
+
+        $this->assertNull($tag);
+        $this->assertSame('curl is not available — install it, or set the binary setting by hand', $why);
+    }
+
+    /**
+     * An update already resolved the tag to decide whether to download at all,
+     * so the install must not resolve it a second time.
+     */
+    public function testAnAlreadyResolvedTagSkipsTheLookup(): void
+    {
+        $scratch = new TempProject();
+
+        $this->install($scratch, tag: 'v9.9.9');
+
+        $this->assertNull($this->failure);
+        $this->assertSame($scratch->path('bin').'/symfony-lsp', $this->installed);
+        $this->assertCount(4, $this->ran, 'tarball, sums, tar, --version — no redirect');
+        $this->assertStringNotContainsString('releases/latest', \implode(' ', $this->ran));
+    }
+
+    /**
+     * Every step reports itself, and the download reports how far it is.
+     *
+     * The whole chain used to happen behind one four-second flash: after it
+     * expired the screen said nothing until the operation ended, which on a
+     * slow link is most of the operation.
+     */
+    public function testEachStepReportsItselfAndTheDownloadReportsAPercentage(): void
+    {
+        $scratch = new TempProject();
+
+        $this->install($scratch);
+
+        $this->assertSame(
+            ['Resolving:0', 'Downloading:0', 'Downloading:41', 'Verifying:0', 'Extracting:0', 'Checking:0'],
+            $this->steps,
+            'the meter is read as it arrives; every other step has no percentage to give',
+        );
+    }
+
+    /** An install handed a tag has nothing to resolve, and says so by not saying it. */
+    public function testAPreResolvedTagReportsNoResolvingStep(): void
+    {
+        $scratch = new TempProject();
+
+        $this->install($scratch, tag: 'v9.9.9');
+
+        $this->assertNotContains('Resolving:0', $this->steps);
+        $this->assertSame('Downloading:0', $this->steps[0]);
+    }
+
+    /**
+     * A chunk is whatever arrived — several carriage-returned redraws, or half
+     * of one. The LAST figure in it is the current one; nothing parseable
+     * reads as "downloading" with no number rather than as a wrong one.
+     *
+     * @return iterable<string, array{string, int}>
+     */
+    public static function meters(): iterable
+    {
+        yield 'one redraw' => ['####   8.9%', 8];
+        yield 'several redraws, the last wins' => ["\r##  20.0%\r####  41.7%", 41];
+        yield 'complete' => ['############ 100.0%', 100];
+        yield 'whole number' => ['## 50%', 50];
+        yield 'a torn chunk with no figure' => ['#####', 0];
+        yield 'empty' => ['', 0];
+        yield 'an error line, not a meter' => ['curl: (22) The requested URL returned error: 404', 0];
+    }
+
+    #[DataProvider('meters')]
+    public function testThePercentageIsReadFromCurlsMeter(string $chunk, int $percent): void
+    {
+        $this->assertSame($percent, Probe::invoke(new Installer(new Release(), '/bin', '/work'), 'percentOf', $chunk));
     }
 }

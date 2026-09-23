@@ -67,4 +67,35 @@ final class ReleaseTest extends TestCase
         $this->assertNull($release->expectedSha($sums, 'absent.tar.gz'));
         $this->assertNull($release->expectedSha('', 'one.tar.gz'));
     }
+
+    /**
+     * The `--version` line is the only record of what is installed — there is
+     * no sidecar file and no setting, because either would be a second source
+     * of truth that desyncs when someone swaps the binary by hand.
+     */
+    public function testVersionFromReadsWhatTheBinaryCallsItself(): void
+    {
+        $release = new Release();
+
+        $this->assertSame('0.21.0', $release->versionFrom("Symfony Language Tools 0.21.0\n"));
+        $this->assertSame('1.0.0-beta.2', $release->versionFrom('Symfony Language Tools 1.0.0-beta.2'), 'a pre-release still names itself');
+        $this->assertNull($release->versionFrom('Symfony Language Tools'), 'a line with no version is not a version');
+        $this->assertNull($release->versionFrom(''), 'a binary that printed nothing leaves the version unknown');
+        $this->assertNull($release->versionFrom('v9.9.9'), 'a TAG is not a --version line; versionOfTag() is that direction');
+    }
+
+    /**
+     * A tag and a `--version` line must compare as one spelling, or an update
+     * check answers "0.21.0 is not v0.21.0" and downloads 9MB on every run.
+     */
+    public function testVersionOfTagStripsTheTagSpelling(): void
+    {
+        $release = new Release();
+
+        $this->assertSame('0.21.0', $release->versionOfTag('v0.21.0'));
+        $this->assertSame('1.0.0-rc.1', $release->versionOfTag('v1.0.0-rc.1'));
+        $this->assertNull($release->versionOfTag('0.21.0'), 'a tag without its v is not a tag this repo publishes');
+        $this->assertNull($release->versionOfTag('../../evil'), 'the same guard the resolvers share');
+        $this->assertNull($release->versionOfTag('v'), 'a bare v carries no version to compare');
+    }
 }

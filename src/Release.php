@@ -100,6 +100,34 @@ final class Release
         return 1 === \preg_match('/^v[0-9][0-9A-Za-z.\-]*$/', $tag) ? $tag : null;
     }
 
+    /**
+     * The version the binary reports for itself, from its `--version` line
+     * (`Symfony Language Tools 0.21.0` -> `0.21.0`), or null when the output
+     * is not that shape.
+     *
+     * Bare, without the tag's leading `v`: this is what the BINARY says, and a
+     * tag says `v0.21.0`. Comparisons normalise on the way in rather than
+     * pretending the two spellings are the same string.
+     */
+    public function versionFrom(string $output): ?string
+    {
+        $matches = [];
+
+        return 1 === \preg_match('/\b([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.\-]*)/', $output, $matches) ? $matches[1] : null;
+    }
+
+    /**
+     * $tag as a bare version, so a tag and a `--version` line compare as one
+     * spelling. A tag that is not shaped like one answers null rather than a
+     * value that would silently never match.
+     */
+    public function versionOfTag(string $tag): ?string
+    {
+        $version = null === self::validTag($tag) ? null : \substr($tag, offset: 1);
+
+        return null === $version || '' === $version ? null : $version;
+    }
+
     public function asset(string $tag, string $platform): string
     {
         return 'symfony-lsp-'.$tag.'-'.$platform.'.tar.gz';
