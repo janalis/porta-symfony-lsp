@@ -6,6 +6,7 @@ use Porta\Overlay\State\ToastSeverity;
 use Porta\Plugin\Api\AbstractToolPlugin;
 use Porta\Plugin\Api\BinarySearch;
 use Porta\Plugin\Api\PluginApi;
+use Porta\Plugin\Api\ServerRole;
 use Porta\SymfonyLsp\InstalledVersion;
 use Porta\SymfonyLsp\Installer;
 use Porta\SymfonyLsp\InstallStep;
@@ -28,11 +29,11 @@ use Symfony\Component\Filesystem\Filesystem;
  * ({@see BinarySearch::PathOnly}), then that installed copy.
  *
  * It serves php, twig, yaml, xml, json and dotenv (narrow the claim with the
- * `languages` setting). It is built to run BESIDE a general PHP server and
- * Porta routes one server per language, so its php claim only wins when
- * neither phpactor nor phpantom is enabled — by LOAD order, so enabling a
- * PHP server live after this plugin takes the php claim back at the next
- * launch — and twig/yaml/xml/json/dotenv are its own either way.
+ * `languages` setting). twig/yaml/xml/json/dotenv are its own; php is claimed
+ * as {@see ServerRole::Supplementary}, because this server is built to run
+ * BESIDE a general PHP one — it runs alongside phpactor or phpantom rather
+ * than instead of either, and is promoted to the php server only when neither
+ * is enabled.
  * javascript/typescript are deliberately not claimed:
  * that would displace the auto-detected typescript-language-server with a
  * server that is not a general TS one.
@@ -93,6 +94,15 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
                 'symfony-lsp',
                 fn (): ?array => $config->command(($this->resolve)(), $this->claimedLanguages($api), $language),
                 $options,
+                // php is SUPPLEMENTARY: this server is built to run beside a
+                // general PHP one, and what it adds there — route names,
+                // service ids, translation ids, Twig paths — is not a second
+                // opinion on where a method is defined. It is still promoted
+                // to the php server when no other plugin claims the language,
+                // which is the behaviour this plugin already documented; what
+                // changes is that it no longer depends on `phpantom` sorting
+                // before `symfony-lsp` in a directory glob.
+                'php' === $language ? ServerRole::Supplementary : ServerRole::Primary,
             );
         }
 
