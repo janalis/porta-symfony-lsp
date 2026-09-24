@@ -167,6 +167,9 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     $this->assertTrue($options['workspaceTrust'] ?? null, 'runtime indexing grants trust');
                 },
             ],
+            // Tall enough to show the whole plugin page: its checkboxes are boxes,
+            // and at 24 rows its button row sits below the window.
+            rows: 40,
         );
 
         $this->addToAssertionCount(1);
@@ -994,6 +997,9 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     $this->assertStringContainsString('9.9.9', $screen, 'the row says what is installed');
                 },
             ],
+            // Tall enough to show the whole plugin page: its checkboxes are boxes,
+            // and at 24 rows its button row sits below the window.
+            rows: 40,
         );
     }
 
