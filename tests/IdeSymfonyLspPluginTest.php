@@ -56,6 +56,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         \putenv('PORTA_HOME'.(null === $this->savedPortaHome ? '' : '='.$this->savedPortaHome));
         \putenv('FAKE_TARBALL');
         \putenv('FAKE_VERSION');
+        \putenv('FAKE_DOWNLOAD_GATE');
     }
 
     /**
@@ -206,7 +207,15 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 // `--progress-bar --stderr -` puts curl's meter on stdout,
                 // which is what the status cell's percentage is read from.
                 if (in_array('--progress-bar', $args, true)) {
-                    echo "\r#####   20.0%\r##########   41.7%";
+                    fwrite(STDOUT, "\r#####   20.0%\r##########   41.7%");
+                    fflush(STDOUT);
+                    // Held mid-download until the test has seen the meter:
+                    // the cell only shows a percentage between this chunk and
+                    // curl's exit, and nothing else bounds that gap from below.
+                    $gate = getenv('FAKE_DOWNLOAD_GATE');
+                    for ($waited = 0; false !== $gate && '' !== $gate && !file_exists($gate) && $waited < 600; ++$waited) {
+                        usleep(50_000);
+                    }
                 }
                 copy((string) getenv('FAKE_TARBALL'), $out);
                 exit(0);
@@ -694,12 +703,19 @@ final class IdeSymfonyLspPluginTest extends TestCase
             '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
         ]);
         self::stubDownloadTools($project);
+        // The meter is transient: the cell shows it from the chunk that names
+        // it until curl exits. A busy loop can read that chunk and the exit in
+        // back-to-back turns, with no frame between — the percentage is then
+        // never painted and the await below burns its whole budget. So the
+        // stub holds the download open until the test has seen it.
+        $gate = $project->path('download.gate');
+        \putenv('FAKE_DOWNLOAD_GATE='.$gate);
 
         $this->runIde(
             $project,
             $project->path('t.twig'),
             [
-                300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide): void {
+                300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide) use ($gate): void {
                     // getOutput() accumulates the whole session, so a NEGATIVE
                     // screen assertion has to start from a cleared terminal
                     // and force a frame of its own.
@@ -713,6 +729,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     // say. Awaited, not merely asserted after the fact: it is
                     // transient by nature.
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp: downloading 41%');
+                    \touch($gate); // seen: let the download finish
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp installed:');
 
                     $terminal->clearOutput();
