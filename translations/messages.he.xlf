@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file source-language="en" target-language="he" datatype="plaintext" original="messages">
+    <body>
+      <trans-unit id="1">
+        <source>symfony-lsp: downloading the latest release…</source>
+        <target>symfony-lsp: מוריד את הגרסה האחרונה…</target>
+      </trans-unit>
+      <trans-unit id="2">
+        <source>symfony-lsp installed: %path%</source>
+        <target>symfony-lsp הותקן: %path%</target>
+      </trans-unit>
+      <trans-unit id="3">
+        <source>symfony-lsp install failed: %why%</source>
+        <target>התקנת symfony-lsp נכשלה: %why%</target>
+      </trans-unit>
+      <trans-unit id="4">
+        <source>symfony-lsp: checking for a newer release…</source>
+        <target>symfony-lsp: מחפש גרסה חדשה יותר…</target>
+      </trans-unit>
+      <trans-unit id="5">
+        <source>symfony-lsp updated: %from% → %to%</source>
+        <target>symfony-lsp עודכן: %from% ← %to%</target>
+      </trans-unit>
+      <trans-unit id="6">
+        <source>symfony-lsp is already up to date (%version%)</source>
+        <target>symfony-lsp כבר מעודכן (%version%)</target>
+      </trans-unit>
+      <trans-unit id="7">
+        <source>symfony-lsp update failed: %why%</source>
+        <target>עדכון symfony-lsp נכשל: %why%</target>
+      </trans-unit>
+      <trans-unit id="8">
+        <source>symfony-lsp: resolving…</source>
+        <target>symfony-lsp: מאתר…</target>
+      </trans-unit>
+      <trans-unit id="9">
+        <source>symfony-lsp: downloading…</source>
+        <target>symfony-lsp: מוריד…</target>
+      </trans-unit>
+      <trans-unit id="10">
+        <source>symfony-lsp: downloading %percent%%</source>
+        <target>symfony-lsp: מוריד %percent%%</target>
+      </trans-unit>
+      <trans-unit id="11">
+        <source>symfony-lsp: verifying…</source>
+        <target>symfony-lsp: מאמת…</target>
+      </trans-unit>
+      <trans-unit id="12">
+        <source>symfony-lsp: extracting…</source>
+        <target>symfony-lsp: מחלץ…</target>
+      </trans-unit>
+      <trans-unit id="13">
+        <source>symfony-lsp: checking the binary…</source>
+        <target>symfony-lsp: בודק את הקובץ הבינרי…</target>
+      </trans-unit>
+      <trans-unit id="14">
+        <source>symfony-lsp %version% is available — run "Symfony LSP: Update Server"</source>
+        <target>symfony-lsp %version% זמין — הריצו את "Symfony LSP: Update Server"</target>
+      </trans-unit>
+      <trans-unit id="15">
+        <source>Check for a newer server once a day</source>
+        <target>לבדוק פעם ביום אם קיים שרת חדש יותר</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

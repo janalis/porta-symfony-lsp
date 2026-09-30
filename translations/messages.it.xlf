@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+  <file source-language="en" target-language="it" datatype="plaintext" original="messages">
+    <body>
+      <trans-unit id="1">
+        <source>symfony-lsp: downloading the latest release…</source>
+        <target>symfony-lsp: download dell’ultima versione…</target>
+      </trans-unit>
+      <trans-unit id="2">
+        <source>symfony-lsp installed: %path%</source>
+        <target>symfony-lsp installato: %path%</target>
+      </trans-unit>
+      <trans-unit id="3">
+        <source>symfony-lsp install failed: %why%</source>
+        <target>installazione di symfony-lsp non riuscita: %why%</target>
+      </trans-unit>
+      <trans-unit id="4">
+        <source>symfony-lsp: checking for a newer release…</source>
+        <target>symfony-lsp: ricerca di una versione più recente…</target>
+      </trans-unit>
+      <trans-unit id="5">
+        <source>symfony-lsp updated: %from% → %to%</source>
+        <target>symfony-lsp aggiornato: %from% → %to%</target>
+      </trans-unit>
+      <trans-unit id="6">
+        <source>symfony-lsp is already up to date (%version%)</source>
+        <target>symfony-lsp è già aggiornato (%version%)</target>
+      </trans-unit>
+      <trans-unit id="7">
+        <source>symfony-lsp update failed: %why%</source>
+        <target>aggiornamento di symfony-lsp non riuscito: %why%</target>
+      </trans-unit>
+      <trans-unit id="8">
+        <source>symfony-lsp: resolving…</source>
+        <target>symfony-lsp: risoluzione…</target>
+      </trans-unit>
+      <trans-unit id="9">
+        <source>symfony-lsp: downloading…</source>
+        <target>symfony-lsp: download…</target>
+      </trans-unit>
+      <trans-unit id="10">
+        <source>symfony-lsp: downloading %percent%%</source>
+        <target>symfony-lsp: download %percent%%</target>
+      </trans-unit>
+      <trans-unit id="11">
+        <source>symfony-lsp: verifying…</source>
+        <target>symfony-lsp: verifica…</target>
+      </trans-unit>
+      <trans-unit id="12">
+        <source>symfony-lsp: extracting…</source>
+        <target>symfony-lsp: estrazione…</target>
+      </trans-unit>
+      <trans-unit id="13">
+        <source>symfony-lsp: checking the binary…</source>
+        <target>symfony-lsp: controllo del binario…</target>
+      </trans-unit>
+      <trans-unit id="14">
+        <source>symfony-lsp %version% is available — run "Symfony LSP: Update Server"</source>
+        <target>symfony-lsp %version% è disponibile — esegui «Symfony LSP: aggiorna server»</target>
+      </trans-unit>
+      <trans-unit id="15">
+        <source>Check for a newer server once a day</source>
+        <target>Cerca un server più recente una volta al giorno</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
