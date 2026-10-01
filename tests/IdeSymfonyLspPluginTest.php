@@ -995,11 +995,13 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     $this->awaitPainted($tui, $terminal, 'Install symfony-lsp');
                     $this->assertFileDoesNotExist($installed);
 
-                    // Down to the install row (last) and press it.
+                    // Down to the install row (the last but the plugin's
+                    // Documentation) and press it.
                     $tui->handleInput("\t"); // nav → form
                     for ($i = 0; $i < 10; ++$i) {
                         $tui->handleInput("\x1b[B");
                     }
+                    $tui->handleInput("\x1b[A");
                     $tui->handleInput("\r");
 
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp installed:');
