@@ -24,7 +24,8 @@ final readonly class Installer
      * ends, instead of holding the install for its whole timeout — and one
      * that keeps moving on a slow link is let finish.
      */
-    private const array LIMITS = ['--connect-timeout', '15', '--speed-limit', '1024', '--speed-time', '30'];
+    /** Every fetch: bounded in time, and HTTPS only — a redirect to plain http is refused, not followed. */
+    private const array LIMITS = ['--connect-timeout', '15', '--speed-limit', '1024', '--speed-time', '30', '--proto', '=https', '--proto-redir', '=https'];
 
     /**
      * The scratch directory's name, minus the per-process suffix the caller

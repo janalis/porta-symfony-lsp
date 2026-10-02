@@ -205,6 +205,9 @@ final class InstallerTest extends TestCase
         $this->assertStringContainsString('releases/latest', $this->ran[0]);
         $this->assertStringContainsString('symfony-lsp-v9.9.9-macos-arm64.tar.gz', $this->ran[1], 'the tag from the redirect names the asset');
         $this->assertStringContainsString('SHA256SUMS', $this->ran[2]);
+        foreach (\array_slice($this->ran, offset: 0, length: 3) as $fetch) {
+            $this->assertStringContainsString('--proto =https --proto-redir =https', $fetch, 'never downgraded to plain http');
+        }
         $this->assertStringStartsWith('tar -xzf', $this->ran[3]);
         $this->assertStringEndsWith('--version', $this->ran[4], 'the landed binary is asked to run before it replaces anything');
         $this->assertSame('9.9.9', $this->version, 'the smoke test already asked what this is — the answer used to be dropped on the floor');
