@@ -19,6 +19,14 @@ use Symfony\Component\Process\ExecutableFinder;
 final readonly class Installer
 {
     /**
+     * How long to wait to connect, and how slow is too slow: a download that
+     * moves less than a kilobyte a second for half a minute has stalled and
+     * ends, instead of holding the install for its whole timeout — and one
+     * that keeps moving on a slow link is let finish.
+     */
+    private const array LIMITS = ['--connect-timeout', '15', '--speed-limit', '1024', '--speed-time', '30'];
+
+    /**
      * The scratch directory's name, minus the per-process suffix the caller
      * appends. Shared with the caller so the sweep in {@see reapStaleScratch()}
      * recognises the directories this class itself creates, and only those.
@@ -254,7 +262,7 @@ final readonly class Installer
     private function resolveTag(string $cwd, \Closure $onTag): void
     {
         ($this->run)(
-            ['curl', '-sSL', '-o', '/dev/null', '-D', '-', $this->release->latestUrl()],
+            ['curl', '-sSL', '-o', '/dev/null', '-D', '-', ...self::LIMITS, $this->release->latestUrl()],
             $cwd,
             function (int $code, string $headers) use ($cwd, $onTag): void {
                 $tag = 0 === $code ? $this->release->tagFromLocation($headers) : null;
@@ -280,15 +288,21 @@ final readonly class Installer
      */
     private function resolveTagFromApi(string $cwd, int $redirectCode, \Closure $onTag): void
     {
-        $argv = ['curl', '-sS', '-D', '-', $this->release->apiUrl()];
-        if ('' !== $this->token) {
-            \array_splice($argv, offset: 1, length: 0, replacement: ['-H', 'Authorization: Bearer '.$this->token]);
+        $argv = ['curl', '-sS', '-D', '-', ...self::LIMITS, $this->release->apiUrl()];
+        // The token in a file only this user reads, never on the command line,
+        // where any user's `ps` would show it while the request runs.
+        $header = '' === $this->token ? null : self::headerFile($cwd, 'Authorization: Bearer '.$this->token);
+        if (null !== $header) {
+            \array_splice($argv, offset: 1, length: 0, replacement: ['-H', '@'.$header]);
         }
 
         ($this->run)(
             $argv,
             $cwd,
-            function (int $code, string $response) use ($redirectCode, $onTag): void {
+            function (int $code, string $response) use ($redirectCode, $onTag, $header): void {
+                if (null !== $header && \is_file($header)) {
+                    \unlink($header);
+                }
                 $tag = 0 === $code ? $this->release->latestTag(self::body($response)) : null;
                 if (null !== $tag) {
                     $noReason = '';
@@ -367,7 +381,7 @@ final readonly class Installer
         // because the BODY is going to a file (`-o`), so stdout is free — and
         // the runner streams stdout, which is the only channel that arrives
         // before the process exits. `-o` stays at index 2 either way.
-        $argv = ['curl', '-fL', '-o', $tarball, '--progress-bar', '--stderr', '-', $this->release->assetUrl($tag, $asset)];
+        $argv = ['curl', '-fL', '-o', $tarball, ...self::LIMITS, '--progress-bar', '--stderr', '-', $this->release->assetUrl($tag, $asset)];
         ($this->run)(
             $argv,
             $this->workDir,
@@ -379,7 +393,7 @@ final readonly class Installer
                 }
                 $this->report(InstallStep::Verifying);
                 ($this->run)(
-                    ['curl', '-fsSL', $this->release->sumsUrl($tag)],
+                    ['curl', '-fsSL', ...self::LIMITS, $this->release->sumsUrl($tag)],
                     $this->workDir,
                     function (int $code, string $sums) use ($asset, $tarball, $onSuccess, $onFailure): void {
                         $expected = 0 === $code ? $this->release->expectedSha($sums, $asset) : null;
@@ -527,5 +541,16 @@ final readonly class Installer
         }
         // @mago-expect lint:no-error-control-operator -- best-effort sweep; an unremovable leftover just stays.
         @\rmdir($path);
+    }
+
+    /** $line in a new file under $dir that only this user can read: its path. */
+    private static function headerFile(string $dir, #[\SensitiveParameter] string $line): string
+    {
+        $path = $dir.'/.auth-'.\bin2hex(\random_bytes(6));
+        \touch($path);
+        \chmod($path, permissions: 0o600);
+        \file_put_contents($path, data: $line);
+
+        return $path;
     }
 }

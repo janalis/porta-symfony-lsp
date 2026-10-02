@@ -268,7 +268,9 @@ final class InstallerTest extends TestCase
         $this->install($scratch, 'no-redirect', token: self::FIXTURE_CREDENTIAL);
 
         $this->assertStringNotContainsString(self::FIXTURE_CREDENTIAL, $this->ran[0], 'the redirect carries no credential');
-        $this->assertStringContainsString('Authorization: Bearer '.self::FIXTURE_CREDENTIAL, $this->ran[1], 'the API fallback does');
+        $this->assertStringNotContainsString(self::FIXTURE_CREDENTIAL, $this->ran[1], 'the API fallback carries it, but never on the command line `ps` shows');
+        $this->assertMatchesRegularExpression('~^curl -H @\S+/\.auth-[0-9a-f]{12} ~', $this->ran[1], 'in a header file');
+        $this->assertSame([], (array) \glob($scratch->path('.auth-*')), 'gone once the request is done');
     }
 
     /** A rate limit that a token did not lift says so, rather than advising a token again. */
