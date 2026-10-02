@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Porta\SymfonyLsp;
 
+use Porta\Plugin\Api\ServerNotFound;
 use Porta\Support\Argv;
 
 /**
@@ -25,20 +26,21 @@ final class ServerConfig
     public const string DEFAULT_LANGUAGES = 'php, twig, yaml, xml, json, dotenv';
 
     /**
-     * The launch argv for one language, or null when the binary is missing or
-     * the `languages` setting no longer claims it (`'*'` claims everything).
+     * The launch argv for one language; null when the `languages` setting no
+     * longer claims it (`'*'` claims everything); {@see ServerNotFound} when it
+     * does and the binary is missing.
      *
      * @param list<string> $claimed
      *
-     * @return list<string>|null
+     * @return list<string>|ServerNotFound|null
      */
-    public function command(?string $binary, array $claimed, string $language): ?array
+    public function command(?string $binary, array $claimed, string $language): array|ServerNotFound|null
     {
-        if (null === $binary) {
-            return null;
-        }
         if (!\in_array($language, $claimed, strict: true) && !\in_array('*', $claimed, strict: true)) {
             return null;
+        }
+        if (null === $binary) {
+            return new ServerNotFound();
         }
 
         return [$binary];

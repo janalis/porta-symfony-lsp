@@ -6,6 +6,7 @@ use Porta\Overlay\State\ToastSeverity;
 use Porta\Plugin\Api\AbstractToolPlugin;
 use Porta\Plugin\Api\BinarySearch;
 use Porta\Plugin\Api\PluginApi;
+use Porta\Plugin\Api\ServerNotFound;
 use Porta\Plugin\Api\ServerRole;
 use Porta\SymfonyLsp\InstalledVersion;
 use Porta\SymfonyLsp\Installer;
@@ -92,7 +93,7 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
             $api->registerLanguageServer(
                 $language,
                 'symfony-lsp',
-                fn (): ?array => $config->command(($this->resolve)(), $this->claimedLanguages($api), $language),
+                fn (): array|ServerNotFound|null => $config->command(($this->resolve)(), $this->claimedLanguages($api), $language),
                 $options,
                 // php is SUPPLEMENTARY: this server is built to run beside a
                 // general PHP one, and what it adds there — route names,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Porta\SymfonyLsp\Tests;
 
 use PHPUnit\Framework\TestCase;
+use Porta\Plugin\Api\ServerNotFound;
 use Porta\SymfonyLsp\ServerConfig;
 use Porta\Tests\Support\TempProject;
 
@@ -16,7 +17,7 @@ final class ServerConfigTest extends TestCase
 
         $this->assertSame(['/opt/symfony-lsp'], $config->command('/opt/symfony-lsp', ['twig', 'yaml'], 'twig'));
         $this->assertNull($config->command('/opt/symfony-lsp', ['twig', 'yaml'], 'php'), 'an unclaimed language stays unserved');
-        $this->assertNull($config->command(null, ['twig'], 'twig'), 'no binary, no server');
+        $this->assertInstanceOf(ServerNotFound::class, $config->command(null, ['twig'], 'twig'), 'claimed, no binary: not found');
         $this->assertNull($config->command(null, [], 'twig'));
     }
 

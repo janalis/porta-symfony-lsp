@@ -392,7 +392,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
             $project->path('t.twig'),
             [
                 300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide): void {
-                    $this->awaitPainted($tui, $terminal, 'LSP:no server');
+                    $this->awaitPainted($tui, $terminal, 'LSP:symfony-lsp not found');
                     Services::resolve($ide, CommandRegistry::class)->run('symfony-lsp:install');
                 },
                 800 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide) use ($log, &$launches): void {
@@ -434,7 +434,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
             $project->path('t.twig'),
             [
                 300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide): void {
-                    $this->awaitPainted($tui, $terminal, 'LSP:no server');
+                    $this->awaitPainted($tui, $terminal, 'LSP:symfony-lsp not found');
                     $registry = Services::resolve($ide, CommandRegistry::class);
                     $registry->run('symfony-lsp:install');
                     // A second invocation while the download runs hits the
@@ -573,10 +573,10 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    public function testWithoutABinaryEveryClaimResolvesToNothing(): void
+    public function testWithoutABinaryEveryClaimIsSaidToBeNotFound(): void
     {
-        // Enabled, but no binary configured and PATH is empty: the resolvers
-        // return null for every language, so php keeps its settings hint.
+        // Enabled, but no binary configured and PATH is empty: every language
+        // it claims is unserved, and the status bar says why — not found.
         $project = new TempProject([
             'a.php' => "<?php\n",
             '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
@@ -587,8 +587,8 @@ final class IdeSymfonyLspPluginTest extends TestCase
             $project->path('a.php'),
             [
                 300 => function (Tui $tui, VirtualTerminal $terminal): void {
-                    $this->awaitPainted($tui, $terminal, 'LSP:none (enable a PHP server in Settings)');
-                    $this->assertStringContainsString('LSP:none (enable a PHP server in Settings)', AnsiUtils::stripAnsiCodes($terminal->getOutput()));
+                    $this->awaitPainted($tui, $terminal, 'LSP:symfony-lsp not found');
+                    $this->assertStringContainsString('LSP:symfony-lsp not found', AnsiUtils::stripAnsiCodes($terminal->getOutput()));
                 },
             ],
         );
