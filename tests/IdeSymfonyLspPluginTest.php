@@ -17,6 +17,7 @@ use Porta\Tests\Support\Probe;
 use Porta\Tests\Support\RunsIde;
 use Porta\Tests\Support\Services;
 use Porta\Tests\Support\TempProject;
+use Porta\Tests\Support\UntrustsProjects;
 use Porta\Tests\Support\UsesBundledPlugins;
 use Porta\Workbench\Menu\MenuItem;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
@@ -40,6 +41,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
     use NavigatesSettings;
     use PreservesPath;
     use RunsIde;
+    use UntrustsProjects;
     use UsesBundledPlugins;
 
     private ?string $savedPortaHome = null;
@@ -109,6 +111,31 @@ final class IdeSymfonyLspPluginTest extends TestCase
         }
 
         return $options;
+    }
+
+    /**
+     * Runtime indexing executes the project's PHP. Switched on globally — the
+     * user's own choice — it still stays off in a project not trusted to run
+     * code: only the project's own answer may let it.
+     */
+    public function testRuntimeIndexingStaysOffInAnUntrustedProject(): void
+    {
+        $project = self::project('lsp.log', files: ['t.twig' => "{{ app.user }}\n"]);
+        $global = \json_decode((string) \file_get_contents($project->path('.porta.json')), associative: true);
+        $global['plugins']['symfony-lsp']['runtime-indexing'] = true;
+        $this->untrustProjects();
+        \mkdir($this->untrustingHome->path('.porta'));
+        \file_put_contents($this->untrustingHome->path('.porta/config.json'), \json_encode($global));
+        \unlink($project->path('.porta.json'));
+        $log = $project->path('lsp.log');
+
+        $this->runIde($project, $project->path('t.twig'), [
+            300 => function () use ($log): void {
+                $this->await(static fn (): bool => [] !== self::initializeOptions($log), what: 'the first initialize to reach the wire log');
+                $this->assertFalse(self::initializeOptions($log)[0]['runtimeIndexing'] ?? null);
+                $this->assertFalse(self::initializeOptions($log)[0]['workspaceTrust'] ?? null);
+            },
+        ]);
     }
 
     public function testServesTwigWithTheConfiguredOptionsAndTogglingRuntimeIndexingRelaunches(): void

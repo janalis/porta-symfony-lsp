@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Porta\Config\WorkspaceTrust;
 use Porta\Overlay\State\ToastSeverity;
 use Porta\Plugin\Api\AbstractToolPlugin;
 use Porta\Plugin\Api\BinarySearch;
@@ -94,7 +95,9 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
         $options = static fn (): array => $config->initializationOptions(
             (string) $api->setting('php-command'),
             (string) $api->setting('environment'),
-            (bool) $api->setting('runtime-indexing'),
+            // Even switched on globally: in an untrusted project, the server
+            // does not execute the project's PHP.
+            (bool) $api->setting('runtime-indexing') && WorkspaceTrust::fromEnvironment()->isTrusted($api->projectRoot()),
         );
         foreach (ServerConfig::LANGUAGES as $language) {
             $api->registerLanguageServer(
