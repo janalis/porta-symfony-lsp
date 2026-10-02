@@ -374,6 +374,42 @@ final class IdeSymfonyLspPluginTest extends TestCase
      * mutation swapping the forced relaunch back to the skipping path passed
      * every other test in the suite: nothing here covered a second install.
      */
+    public function testDisabledMidInstallTheDownloadStopsAndSaysNothing(): void
+    {
+        $home = new TempProject();
+        \putenv('PORTA_HOME='.$home->dir);
+        $project = new TempProject([
+            't.twig' => "x\n",
+            'stubs/.keep' => '',
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+        ]);
+        self::stubDownloadTools($project, 'lsp.log');
+
+        $this->runIde(
+            $project,
+            $project->path('t.twig'),
+            [
+                300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide): void {
+                    $this->awaitPainted($tui, $terminal, 'LSP:symfony-lsp not found');
+                    $registry = Services::resolve($ide, CommandRegistry::class);
+                    $registry->run('symfony-lsp:install');
+                    $manager = Probe::object(Services::resolve($ide, PluginHost::class), 'manager');
+                    $plugin = Probe::get($manager, 'instances')['symfony-lsp'];
+                    \assert(\is_object($plugin), description: 'the activated instance');
+                    $manager->deactivate('symfony-lsp', $registry);
+
+                    $this->assertFalse(Probe::get($plugin, 'installing'), 'the slot is free');
+                    $this->assertSame([], Probe::get(Probe::object($plugin, 'runs'), 'running'), 'and nothing it started runs on');
+                },
+                900 => function (Tui $tui, VirtualTerminal $terminal): void {
+                    $this->assertStringNotContainsString('symfony-lsp installed', AnsiUtils::stripAnsiCodes($terminal->getOutput()), 'no word from a plugin that is gone');
+                },
+            ],
+        );
+
+        $this->assertFileDoesNotExist($home->path('.porta/bin/symfony-lsp'));
+    }
+
     public function testASecondInstallRelaunchesTheRunningServer(): void
     {
         $home = new TempProject();

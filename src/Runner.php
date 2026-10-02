@@ -41,18 +41,27 @@ final class Runner
      * @param float|null $timeout seconds before the child is cancelled and reported as exit -1;
      *        null takes {@see \Porta\Support\AsyncProcess::EXTERNAL_TOOL_TIMEOUT}, the
      *        network-bound default
+     * @param Runs|null  $runs    where what runs is kept while it does, for whoever may stop it
      *
      * @return \Closure(list<string>, string, \Closure(int, string): void, (\Closure(string): void)|null): void
      */
-    public static function default(?float $timeout = null): \Closure
+    public static function default(?float $timeout = null, ?Runs $runs = null): \Closure
     {
         $timeout ??= AsyncProcess::EXTERNAL_TOOL_TIMEOUT;
 
-        return /** @param list<string> $argv */ static function (array $argv, string $cwd, \Closure $onExit, ?\Closure $onChunk = null) use ($timeout): void {
-            if (!new AsyncProcess($argv, $cwd, timeout: $timeout)->start($onExit, $onChunk)) {
+        return /** @param list<string> $argv */ static function (array $argv, string $cwd, \Closure $onExit, ?\Closure $onChunk = null) use ($timeout, $runs): void {
+            $process = new AsyncProcess($argv, $cwd, timeout: $timeout);
+            $started = $process->start(static function (int $code, string $out) use ($process, $runs, $onExit): void {
+                $runs?->forget($process);
+                $onExit($code, $out);
+            }, $onChunk);
+            if (!$started) {
                 $noOutput = '';
                 $onExit(-1, $noOutput);
+
+                return;
             }
+            $runs?->keep($process);
         };
     }
 }

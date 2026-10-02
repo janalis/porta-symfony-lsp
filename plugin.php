@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Porta\Overlay\State\ToastSeverity;
 use Porta\Plugin\Api\AbstractToolPlugin;
 use Porta\Plugin\Api\BinarySearch;
+use Porta\Plugin\Api\DisposablePlugin;
 use Porta\Plugin\Api\PluginApi;
 use Porta\Plugin\Api\ServerNotFound;
 use Porta\Plugin\Api\ServerRole;
@@ -12,6 +13,8 @@ use Porta\SymfonyLsp\InstalledVersion;
 use Porta\SymfonyLsp\Installer;
 use Porta\SymfonyLsp\InstallStep;
 use Porta\SymfonyLsp\Release;
+use Porta\SymfonyLsp\Runner;
+use Porta\SymfonyLsp\Runs;
 use Porta\SymfonyLsp\ServerConfig;
 use Porta\SymfonyLsp\UpdateCheck;
 use Symfony\Component\Filesystem\Filesystem;
@@ -45,8 +48,11 @@ use Symfony\Component\Filesystem\Filesystem;
  * `initializationOptions`, re-read on every LSP (re)configure, so a settings
  * edit relaunches the server with the new values.
  */
-return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends AbstractToolPlugin {
+return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends AbstractToolPlugin implements DisposablePlugin {
     private bool $installing = false;
+
+    /** What an install has running, stopped if the plugin goes mid-install. */
+    private Runs $runs;
 
     /** What the status cell shows while an install runs; '' the rest of the time. */
     private string $progress = '';
@@ -72,6 +78,7 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
 
     public function activate(PluginApi $api): void
     {
+        $this->runs = new Runs();
         $config = new ServerConfig();
         $this->binDir = $config->binDir(getenv('PORTA_HOME'), getenv('HOME'));
         $this->resolve = fn (): ?string => $config->binary($this->binary($api), $this->binDir);
@@ -183,6 +190,7 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
             new Release(),
             $binDir,
             \dirname($binDir).'/tmp/'.Installer::SCRATCH_PREFIX.(int) getmypid(),
+            Runner::default(runs: $this->runs),
             token: $token,
             onProgress: function (InstallStep $step, int $percent) use ($api): void {
                 $this->showProgress($api, $step, $percent);
@@ -204,6 +212,17 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
         // The bar caches its assembled line, so a segment that moved between
         // frames has to say so or the old text stays put.
         $api->refreshStatusSegments();
+    }
+
+    /**
+     * Disabled mid-install: what runs is stopped — none of it calls back
+     * into a plugin that is gone — and the slot is free for next time.
+     */
+    public function deactivate(): void
+    {
+        $this->runs->cancel();
+        $this->installing = false;
+        $this->progress = '';
     }
 
     /** Release the status cell — a finished install must not park a percentage in the bar. */
