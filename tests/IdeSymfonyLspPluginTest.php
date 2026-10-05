@@ -162,7 +162,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 500 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide): void {
                     Services::resolve($ide, CommandRegistry::class)->run('ide_settings');
                     $tui->handleInput("\t"); // form → nav
-                    $this->selectSettingsSection($tui->getById('settings-nav'), 'plugin:symfony-lsp');
+                    $this->selectSettingsSection($this->settingsNav($tui), 'plugin:symfony-lsp');
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp binary');
                     $screen = AnsiUtils::stripAnsiCodes($terminal->getOutput());
                     $this->assertStringContainsString('symfony-lsp binary', $screen);
@@ -292,7 +292,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project);
         $installed = $home->dir.'/.porta/bin/symfony-lsp';
@@ -336,7 +336,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project);
 
@@ -408,7 +408,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project, 'lsp.log');
 
@@ -444,7 +444,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project, 'lsp.log');
         $log = $project->path('lsp.log');
@@ -487,7 +487,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project);
         $installed = $home->dir.'/.porta/bin/symfony-lsp';
@@ -549,7 +549,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         try {
             $project = new TempProject([
                 'a.php' => "<?php\n",
-                '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+                '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
             ]);
 
             $this->runIde(
@@ -586,7 +586,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         // the failure must surface as a toast — not wedge the busy flag.
         $project = new TempProject([
             'a.php' => "<?php\n",
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
 
         $this->runIde(
@@ -642,7 +642,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         // it claims is unserved, and the status bar says why — not found.
         $project = new TempProject([
             'a.php' => "<?php\n",
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
 
         $this->runIde(
@@ -677,7 +677,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project);
         $installed = $home->dir.'/.porta/bin/symfony-lsp';
@@ -720,7 +720,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project);
 
@@ -763,7 +763,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project);
         // The meter is transient: the cell shows it from the chunk that names
@@ -841,7 +841,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project);
         \putenv('FAKE_VERSION=9.9.10');
@@ -876,7 +876,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project);
         $note = $home->dir.'/.porta/symfony-lsp-check.json';
@@ -907,10 +907,13 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode([
-                'enabledPlugins' => ['symfony-lsp'],
-                'plugins' => ['symfony-lsp' => ['check-updates' => false]],
-            ]),
+            '.porta.json' => \json_encode(
+                [
+                    'enabledPlugins' => ['symfony-lsp'],
+                    'plugins' => ['symfony-lsp' => ['check-updates' => false]],
+                ],
+                \JSON_THROW_ON_ERROR,
+            ),
         ]);
         self::stubDownloadTools($project);
         \putenv('FAKE_VERSION=9.9.10');
@@ -954,7 +957,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project);
         // A newer release IS out there; the point is that nothing looks.
@@ -1003,7 +1006,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         // lookup cannot spawn curl at all.
         $project = new TempProject([
             't.twig' => "x\n",
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
 
         $this->runIde(
@@ -1042,7 +1045,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
-            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']]),
+            '.porta.json' => \json_encode(['enabledPlugins' => ['symfony-lsp']], \JSON_THROW_ON_ERROR),
         ]);
         self::stubDownloadTools($project);
         $installed = $home->dir.'/.porta/bin/symfony-lsp';
@@ -1054,7 +1057,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide) use ($installed): void {
                     Services::resolve($ide, CommandRegistry::class)->run('ide_settings');
                     $tui->handleInput("\t"); // form → nav
-                    $this->selectSettingsSection($tui->getById('settings-nav'), 'plugin:symfony-lsp');
+                    $this->selectSettingsSection($this->settingsNav($tui), 'plugin:symfony-lsp');
                     $this->awaitPainted($tui, $terminal, 'Install symfony-lsp');
                     $this->assertFileDoesNotExist($installed);
 

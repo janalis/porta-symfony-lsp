@@ -73,7 +73,7 @@ final class InstalledVersion
      * no longer there. Concurrent calls collapse: the second is dropped, not
      * queued, because both would ask the same question of the same file.
      *
-     * @param \Closure(): void|null $then runs once the cache has moved (or has been left alone)
+     * @param (\Closure(): void)|null $then runs once the cache has moved (or has been left alone)
      */
     public function probe(?string $binary, ?\Closure $then = null): void
     {
