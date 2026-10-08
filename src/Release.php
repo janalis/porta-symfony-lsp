@@ -44,6 +44,7 @@ final class Release
     public function latestTag(string $json): ?string
     {
         /** @var array{tag_name?: mixed}|bool|int|float|string|null $decoded */
+        // @noinspection JsonEncodingApiUsageInspection -- a peer's line that is not JSON is dropped, not thrown: it comes off the network
         $decoded = \json_decode($json, associative: true);
         $tag = \is_array($decoded) && \is_string($decoded['tag_name'] ?? null) ? $decoded['tag_name'] : '';
 
@@ -97,7 +98,7 @@ final class Release
      */
     private static function validTag(string $tag): ?string
     {
-        return 1 === \preg_match('/^v[0-9][0-9A-Za-z.\-]*$/', $tag) ? $tag : null;
+        return 1 === \preg_match('/^v\d[0-9A-Za-z.\-]*$/', $tag) ? $tag : null;
     }
 
     /**
@@ -113,7 +114,7 @@ final class Release
     {
         $matches = [];
 
-        return 1 === \preg_match('/\b([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.\-]*)/', $output, $matches) ? $matches[1] : null;
+        return 1 === \preg_match('/\b(\d+\.\d+\.\d+[0-9A-Za-z.\-]*)/', $output, $matches) ? $matches[1] : null;
     }
 
     /**

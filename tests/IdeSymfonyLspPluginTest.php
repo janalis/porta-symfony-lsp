@@ -81,10 +81,13 @@ final class IdeSymfonyLspPluginTest extends TestCase
         \chmod($binary, permissions: 0o755);
         \file_put_contents(
             $project->path('.porta.json'),
-            \json_encode([
-                'enabledPlugins' => ['symfony-lsp'],
-                'plugins' => ['symfony-lsp' => ['binary' => $binary, ...$settings]],
-            ]),
+            \json_encode(
+                [
+                    'enabledPlugins' => ['symfony-lsp'],
+                    'plugins' => ['symfony-lsp' => ['binary' => $binary, ...$settings]],
+                ],
+                \JSON_THROW_ON_ERROR,
+            ),
         );
 
         return $project;
@@ -104,7 +107,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         $options = [];
         foreach (\array_filter(\explode("\n", (string) \file_get_contents($log))) as $line) {
             /** @var array{method?: string, params?: array{initializationOptions?: array<string, mixed>}}|null $message */
-            $message = \json_decode($line, associative: true);
+            $message = \json_decode($line, associative: true, flags: \JSON_THROW_ON_ERROR);
             if (\is_array($message) && 'initialize' === ($message['method'] ?? null)) {
                 $options[] = $message['params']['initializationOptions'] ?? [];
             }
@@ -121,11 +124,11 @@ final class IdeSymfonyLspPluginTest extends TestCase
     public function testRuntimeIndexingStaysOffInAnUntrustedProject(): void
     {
         $project = self::project('lsp.log', files: ['t.twig' => "{{ app.user }}\n"]);
-        $global = \json_decode((string) \file_get_contents($project->path('.porta.json')), associative: true);
+        $global = \json_decode((string) \file_get_contents($project->path('.porta.json')), associative: true, flags: \JSON_THROW_ON_ERROR);
         $global['plugins']['symfony-lsp']['runtime-indexing'] = true;
         $this->untrustProjects();
         \mkdir($this->untrustingHome->path('.porta'));
-        \file_put_contents($this->untrustingHome->path('.porta/config.json'), \json_encode($global));
+        \file_put_contents($this->untrustingHome->path('.porta/config.json'), \json_encode($global, \JSON_THROW_ON_ERROR));
         \unlink($project->path('.porta.json'));
         $log = $project->path('lsp.log');
 
@@ -522,7 +525,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     // putting a key for a machine-global install into a file
                     // that travels with the project.
                     /** @var array{plugins?: array<string, array<string, mixed>>} $config */
-                    $config = \json_decode((string) \file_get_contents($project->path('.porta.json')), associative: true);
+                    $config = \json_decode((string) \file_get_contents($project->path('.porta.json')), associative: true, flags: \JSON_THROW_ON_ERROR);
                     $this->assertArrayNotHasKey('binary', $config['plugins']['symfony-lsp'] ?? [], 'a machine-global install leaves the shared config alone');
                 },
                 900 => function (Tui $tui, VirtualTerminal $terminal): void {
@@ -855,7 +858,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     // Awaited as a fragment that survives the toast's wrap.
                     $this->awaitPainted($tui, $terminal, 'symfony-lsp 9.9.10 is available');
                     $this->assertFileExists($note, 'the machine records that it LOOKED, so it does not look again today');
-                    $state = \json_decode((string) \file_get_contents($note), associative: true);
+                    $state = \json_decode((string) \file_get_contents($note), associative: true, flags: \JSON_THROW_ON_ERROR);
                     $this->assertSame('v9.9.10', $state['latestTag'] ?? null);
                 },
             ],
@@ -953,7 +956,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
         \putenv('PORTA_HOME='.$home->dir);
         self::plantInstalledServer($home, '9.9.9');
         $note = $home->dir.'/.porta/symfony-lsp-check.json';
-        \file_put_contents($note, (string) \json_encode(['checkedAt' => \time(), 'latestTag' => 'v9.9.9']));
+        \file_put_contents($note, (string) \json_encode(['checkedAt' => \time(), 'latestTag' => 'v9.9.9'], \JSON_THROW_ON_ERROR));
         $project = new TempProject([
             't.twig' => "x\n",
             'stubs/.keep' => '',
@@ -980,7 +983,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                         what: 'the boot version probe to answer, after which the daily check has already decided',
                     );
 
-                    $state = \json_decode((string) \file_get_contents($note), associative: true);
+                    $state = \json_decode((string) \file_get_contents($note), associative: true, flags: \JSON_THROW_ON_ERROR);
                     $this->assertSame('v9.9.9', $state['latestTag'] ?? null, 'the note is untouched, so nothing asked');
                     $this->frame($tui);
                     $this->assertStringNotContainsString('is available', AnsiUtils::stripAnsiCodes($terminal->getOutput()));

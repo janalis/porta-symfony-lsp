@@ -349,7 +349,7 @@ final readonly class Installer
     {
         $matches = [];
 
-        return 1 === \preg_match('~^x-ratelimit-reset:\s*([0-9]+)~mi', $headers, $matches)
+        return 1 === \preg_match('~^x-ratelimit-reset:\s*(\d+)~mi', $headers, $matches)
             ? \max(1, (int) \ceil(((int) $matches[1] - \time()) / 60))
             : 1;
     }
@@ -426,7 +426,7 @@ final readonly class Installer
     {
         $matches = [];
 
-        return 1 === \preg_match('/([0-9]+)(?:\.[0-9]+)?%(?!.*%)/s', $chunk, $matches) ? (int) $matches[1] : 0;
+        return 1 === \preg_match('/(\d+)(?:\.\d+)?%(?!.*%)/s', $chunk, $matches) ? (int) $matches[1] : 0;
     }
 
     /** @param int $percent how far through the download; 0 for every other step */

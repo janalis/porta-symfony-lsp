@@ -36,7 +36,7 @@ final class UpdateCheckTest extends TestCase
         $this->assertFileDoesNotExist($binDir.'/symfony-lsp-check.json');
         $this->assertSame(
             ['checkedAt' => self::NOON, 'latestTag' => 'v0.21.0'],
-            \json_decode((string) \file_get_contents($home->path('.porta/symfony-lsp-check.json')), associative: true),
+            \json_decode((string) \file_get_contents($home->path('.porta/symfony-lsp-check.json')), associative: true, flags: \JSON_THROW_ON_ERROR),
         );
     }
 
