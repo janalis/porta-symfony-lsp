@@ -84,7 +84,7 @@ final class InstalledVersion
 
             return;
         }
-        if ($this->probing || $binary === $this->probed && '' !== $this->version) {
+        if ($this->probing || ($binary === $this->probed && '' !== $this->version)) {
             $then?->__invoke();
 
             return;

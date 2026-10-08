@@ -134,7 +134,7 @@ final readonly class Installer
         }
         $this->reapStaleScratch();
         // @mago-expect lint:no-error-control-operator -- a blocked scratch dir is an expected failure path; its warning must reach the flash, not the error log.
-        if (!\is_dir($this->workDir) && !@\mkdir($this->workDir, permissions: 0o755, recursive: true)) {
+        if (!\is_dir($this->workDir) && !@\mkdir($this->workDir, permissions: 0o755, recursive: true) && !\is_dir($this->workDir)) {
             $onFailure('cannot create '.$this->workDir);
 
             return;
@@ -451,7 +451,7 @@ final readonly class Installer
                     return;
                 }
                 // @mago-expect lint:no-error-control-operator -- an unwritable destination is an expected failure path; its warning must reach the flash, not the error log.
-                if (!\is_dir($this->binDir) && !@\mkdir($this->binDir, permissions: 0o755, recursive: true)) {
+                if (!\is_dir($this->binDir) && !@\mkdir($this->binDir, permissions: 0o755, recursive: true) && !\is_dir($this->binDir)) {
                     $onFailure('cannot create '.$this->binDir);
 
                     return;
