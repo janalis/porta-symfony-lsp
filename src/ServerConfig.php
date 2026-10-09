@@ -36,14 +36,11 @@ final class ServerConfig
      */
     public function command(?string $binary, array $claimed, string $language): array|ServerNotFound|null
     {
-        if (!\in_array($language, $claimed, strict: true) && !\in_array('*', $claimed, strict: true)) {
-            return null;
-        }
-        if (null === $binary) {
-            return new ServerNotFound();
-        }
-
-        return [$binary];
+        return match (true) {
+            !\in_array($language, $claimed, strict: true) && !\in_array('*', $claimed, strict: true) => null,
+            null === $binary => new ServerNotFound(),
+            default => [$binary],
+        };
     }
 
     /**

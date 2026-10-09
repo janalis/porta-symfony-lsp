@@ -127,25 +127,30 @@ final readonly class Installer
         // ~9MB download to be told `could not extract` — which reads as a
         // corrupt release rather than a missing tool.
         $missing = $this->missingTool();
-        if (null !== $missing) {
-            $onFailure($missing.' is not available — install it, or set the binary setting by hand');
+        $problem = null === $missing ? $this->prepareScratch() : $missing.' is not available — install it, or set the binary setting by hand';
+        match (true) {
+            null !== $problem => $onFailure($problem),
+            null !== $tag => $this->download($tag, $platform, $onSuccess, $onFailure),
+            default => $this->resolveThenDownload($platform, $onSuccess, $onFailure),
+        };
+    }
 
-            return;
-        }
+    /** Sweep stale scratch and make the work dir; why not, or null when it is there. */
+    private function prepareScratch(): ?string
+    {
         $this->reapStaleScratch();
         // @mago-expect lint:no-error-control-operator -- a blocked scratch dir is an expected failure path; its warning must reach the flash, not the error log.
-        if (!\is_dir($this->workDir) && !@\mkdir($this->workDir, permissions: 0o755, recursive: true) && !\is_dir($this->workDir)) {
-            $onFailure('cannot create '.$this->workDir);
+        $ready = \is_dir($this->workDir) || @\mkdir($this->workDir, permissions: 0o755, recursive: true) || \is_dir($this->workDir);
 
-            return;
-        }
+        return $ready ? null : 'cannot create '.$this->workDir;
+    }
 
-        if (null !== $tag) {
-            $this->download($tag, $platform, $onSuccess, $onFailure);
-
-            return;
-        }
-
+    /**
+     * @param \Closure(string, string): void $onSuccess
+     * @param \Closure(string): void         $onFailure
+     */
+    private function resolveThenDownload(string $platform, \Closure $onSuccess, \Closure $onFailure): void
+    {
         $this->report(InstallStep::Resolving);
         $this->resolveTag($this->workDir, function (?string $tag, string $why) use ($platform, $onSuccess, $onFailure): void {
             if (null === $tag) {
@@ -332,16 +337,14 @@ final readonly class Installer
             return 'cannot reach github.com — check the network or a proxy';
         }
         $headers = self::headers($response);
-        if (\str_contains($headers, '403') && \preg_match('~^x-ratelimit-remaining:\s*0~mi', $headers)) {
-            return '' !== $token
-                ? 'GitHub rate limit reached even with a token — try again shortly'
-                : 'GitHub rate limit reached (60/hour per IP) — set GITHUB_TOKEN, or retry in '.self::minutesUntilReset($headers).' min';
-        }
-        if (\str_contains($headers, '404')) {
-            return 'no releases found for symfony/language-tools — the repo or release may have moved';
-        }
 
-        return 'could not resolve the latest symfony-lsp release';
+        return match (true) {
+            \str_contains($headers, '403') && \preg_match('~^x-ratelimit-remaining:\s*0~mi', $headers) => '' !== $token
+                ? 'GitHub rate limit reached even with a token — try again shortly'
+                : 'GitHub rate limit reached (60/hour per IP) — set GITHUB_TOKEN, or retry in '.self::minutesUntilReset($headers).' min',
+            \str_contains($headers, '404') => 'no releases found for symfony/language-tools — the repo or release may have moved',
+            default => 'could not resolve the latest symfony-lsp release',
+        };
     }
 
     /** Whole minutes until `x-ratelimit-reset`, floored at 1 so it never reads "0 min". */

@@ -245,19 +245,18 @@ return new class('symfony-lsp', 'symfony-lsp', BinarySearch::PathOnly) extends A
      */
     private function begin(PluginApi $api): ?string
     {
-        if (null === $this->binDir) {
-            $api->notify($api->trans('symfony-lsp install failed: %why%', ['%why%' => 'no home directory to install into']), ToastSeverity::Error, 4.0);
-
-            return null;
-        }
-        if ($this->installing) {
-            $api->flash($api->trans('%tool%: already running', ['%tool%' => $this->name()]));
+        $binDir = $this->binDir;
+        if (null === $binDir || $this->installing) {
+            match (true) {
+                null === $binDir => $api->notify($api->trans('symfony-lsp install failed: %why%', ['%why%' => 'no home directory to install into']), ToastSeverity::Error, 4.0),
+                default => $api->flash($api->trans('%tool%: already running', ['%tool%' => $this->name()])),
+            };
 
             return null;
         }
         $this->installing = true;
 
-        return $this->binDir;
+        return $binDir;
     }
 
     private function install(PluginApi $api): void
