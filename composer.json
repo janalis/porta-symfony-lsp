@@ -10,5 +10,36 @@
         "psr-4": {
             "Porta\\SymfonyLsp\\": "src/"
         }
+    },
+    "extra": {
+        "porta": {
+            "tools": [
+                {
+                    "name": "symfony-lsp",
+                    "purpose": "the Symfony language server",
+                    "setting": "binary",
+                    "sources": [
+                        [
+                            "github",
+                            "symfony/language-tools",
+                            {
+                                "asset": "symfony-lsp-{tag}-{os}-{arch}.tar.gz",
+                                "member": "symfony-lsp-{tag}-{os}-{arch}/symfony-lsp",
+                                "os": {
+                                    "Darwin": "macos",
+                                    "Linux": "linux"
+                                },
+                                "arch": {
+                                    "arm64": "arm64",
+                                    "aarch64": "arm64",
+                                    "x86_64": "x64",
+                                    "amd64": "x64"
+                                }
+                            }
+                        ]
+                    ]
+                }
+            ]
+        }
     }
 }

@@ -9,27 +9,26 @@ off by default — turn it on under **Settings → Plugins → symfony-lsp**.
 
 ## Installing the server
 
-The server ships only as a binary on GitHub Releases, so the plugin installs
-it for you. **Symfony LSP: Install Server** (the Plugins menu or the palette)
-downloads it, verifies its checksum and puts it in `~/.porta/bin`, where every
-project shares it. A cell on the status bar reports each step — resolving,
-downloading with a percentage, verifying, extracting, checking the binary —
-and clears when it is done.
+The server ships only as a binary on GitHub Releases, so Porta installs it for
+you: press **Install** beside **symfony-lsp** under **Tools** on this plugin's
+settings page, or run **Plugins: Install Missing Tools** from the palette. It
+downloads the release for your machine, verifies its checksum, checks that it
+runs, and puts it in `~/.porta/bin`, where every project shares it. A toast
+follows each step — resolving, downloading with a percentage, verifying,
+extracting, checking the binary.
 
-Once a copy is there, **Symfony LSP: Update Server** takes over the menu
-entry, and it **compares before it downloads**: it resolves the latest tag,
-asks the installed binary its version, and says "already up to date" rather
-than fetching ~9 MB again. The plugin's settings page carries the same two
-verbs as one button, captioned Install or Update with the installed version
-beside it. The Welcome card is not done until the server is actually there —
-pressing it enables the plugin *and* installs.
+Once a copy is there, the same button reads **Update**, and it **compares
+before it downloads**: it resolves the latest release, asks the installed
+binary its version, and says "already up to date" rather than fetching ~9 MB
+again. The Welcome card is not done until the server is actually there —
+pressing it enables the plugin *and* installs it.
 
-With **Check for a newer server once a day** on (the default), one request a
-day offers a newer release when there is one, and says nothing at all when
-there is not or when GitHub cannot be reached.
+Porta checks for a newer release in the background with every other tool —
+once a day by default; **Check tools for updates** under **Settings → General**
+makes it weekly or turns it off.
 
-Everything here needs `curl` and `tar` on your `PATH`, and honours
-`GITHUB_TOKEN` / `GH_TOKEN` if GitHub rate-limits the release lookup.
+Installing needs `curl` and `tar` on your `PATH`, and honours `GITHUB_TOKEN` /
+`GH_TOKEN` if GitHub rate-limits the release lookup.
 
 ## Runtime indexing
 
@@ -49,4 +48,3 @@ boots in.
 | Runtime indexing | off | Let the server execute your application's PHP to index it |
 | PHP command | `php` | How the application is run when inspected |
 | Symfony environment | `dev` | The environment the application boots in |
-| Check for a newer server once a day | on | Offer a newer release when there is one |
