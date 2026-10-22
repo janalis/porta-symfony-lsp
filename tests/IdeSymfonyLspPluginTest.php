@@ -194,8 +194,9 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 },
             ],
             // Tall enough to show the whole plugin page: its checkboxes are boxes,
-            // and at 24 rows its button row sits below the window.
-            rows: 40,
+            // its long hints wrap onto rows of their own, and at 24 rows (40,
+            // once the hints wrapped) its button row sits below the window.
+            rows: 48,
         );
 
         $this->addToAssertionCount(1);
