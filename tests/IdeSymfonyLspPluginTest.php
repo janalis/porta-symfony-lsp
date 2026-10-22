@@ -170,7 +170,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     // is drawn disabled (dashed) rather than replacing a copy
                     // someone else put there.
                     $this->assertMatchesRegularExpression(
-                        '/symfony-lsp — the Symfony\s+┆\s+Update\s+┆ · 1\.2\.3 · /u', // the label's first line: it wraps in a third of the pane
+                        '/symfony-lsp — the Symfony[ a-z]*┆\s+Update\s+┆ · 1\.2\.3 · /u', // the label's first line: where it wraps depends on the hints beside it
                         $screen,
                         'the row says what is installed, and offers no update',
                     );
