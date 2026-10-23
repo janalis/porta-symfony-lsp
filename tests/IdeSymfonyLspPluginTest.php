@@ -341,7 +341,7 @@ final class IdeSymfonyLspPluginTest extends TestCase
                     Services::resolve($ide, CommandRegistry::class)->run('ide_settings');
                     $tui->handleInput("\t"); // form → nav
                     $this->selectSettingsSection($this->settingsNav($tui), 'plugin:symfony-lsp');
-                    $this->awaitPainted($tui, $terminal, 'symfony-lsp — the Symfony language server');
+                    $this->awaitPainted($tui, $terminal, 'symfony-lsp — the Symfony language'); // the label's first line: it wraps in a forty-column column
                     $this->assertFileDoesNotExist($installed);
 
                     // Down to the tool's row (the last but the plugin's
