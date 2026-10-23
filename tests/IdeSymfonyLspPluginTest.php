@@ -198,8 +198,6 @@ final class IdeSymfonyLspPluginTest extends TestCase
             // once the hints wrapped) its button row sits below the window.
             rows: 48,
         );
-
-        $this->addToAssertionCount(1);
     }
 
     /**
@@ -289,8 +287,6 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 },
             ],
         );
-
-        $this->addToAssertionCount(1);
     }
 
     public function testWithoutABinaryEveryClaimIsSaidToBeNotFound(): void
@@ -312,8 +308,6 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 },
             ],
         );
-
-        $this->addToAssertionCount(1);
     }
 
     /**
