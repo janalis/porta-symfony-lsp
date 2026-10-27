@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Porta\Config\CommandRegistry;
 use Porta\Ide;
 use Porta\Tests\Support\ClearsPortaLsp;
+use Porta\Tests\Support\LspWireLog;
 use Porta\Tests\Support\NavigatesSettings;
 use Porta\Tests\Support\PreservesPath;
 use Porta\Tests\Support\RunsIde;
@@ -87,29 +88,6 @@ final class IdeSymfonyLspPluginTest extends TestCase
     }
 
     /**
-     * The `initializationOptions` of every `initialize` request the stub
-     * logged so far, oldest first.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private static function initializeOptions(string $log): array
-    {
-        if (!\is_file($log)) {
-            return [];
-        }
-        $options = [];
-        foreach (\array_filter(\explode("\n", (string) \file_get_contents($log))) as $line) {
-            /** @var array{method?: string, params?: array{initializationOptions?: array<string, mixed>}}|null $message */
-            $message = \json_decode($line, associative: true, flags: \JSON_THROW_ON_ERROR);
-            if (\is_array($message) && 'initialize' === ($message['method'] ?? null)) {
-                $options[] = $message['params']['initializationOptions'] ?? [];
-            }
-        }
-
-        return $options;
-    }
-
-    /**
      * Runtime indexing executes the project's PHP. Switched on globally — the
      * user's own choice — it still stays off in a project not trusted to run
      * code: only the project's own answer may let it.
@@ -127,9 +105,9 @@ final class IdeSymfonyLspPluginTest extends TestCase
 
         $this->runIde($project, $project->path('t.twig'), [
             300 => function () use ($log): void {
-                $this->await(static fn (): bool => [] !== self::initializeOptions($log), what: 'the first initialize to reach the wire log');
-                $this->assertFalse(self::initializeOptions($log)[0]['runtimeIndexing'] ?? null);
-                $this->assertFalse(self::initializeOptions($log)[0]['workspaceTrust'] ?? null);
+                $this->await(static fn (): bool => [] !== LspWireLog::initializeOptions($log), what: 'the first initialize to reach the wire log');
+                $this->assertFalse(LspWireLog::initializeOptions($log)[0]['runtimeIndexing'] ?? null);
+                $this->assertFalse(LspWireLog::initializeOptions($log)[0]['workspaceTrust'] ?? null);
             },
         ]);
     }
@@ -146,10 +124,10 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 300 => function (Tui $tui, VirtualTerminal $terminal) use ($log): void {
                     // The twig buffer's didOpen launches the server; the wire
                     // log is the on-disk effect to await, not the status bar.
-                    $this->await(static fn (): bool => [] !== self::initializeOptions($log), what: 'the first initialize to reach the wire log');
+                    $this->await(static fn (): bool => [] !== LspWireLog::initializeOptions($log), what: 'the first initialize to reach the wire log');
                     $this->assertSame(
                         ['phpCommand' => ['php'], 'environment' => 'dev', 'runtimeIndexing' => false, 'workspaceTrust' => false],
-                        self::initializeOptions($log)[0],
+                        LspWireLog::initializeOptions($log)[0],
                         'the defaults travel as initializationOptions, workspaceTrust explicit',
                     );
                     $this->awaitPainted($tui, $terminal, 'LSP:symfony-lsp');
@@ -187,8 +165,8 @@ final class IdeSymfonyLspPluginTest extends TestCase
                 800 => function ($tui, $terminal) use ($log): void {
                     // The setting edit reconfigures LSP live: the relaunched
                     // server's initialize now grants workspace trust.
-                    $this->await(static fn (): bool => \count(self::initializeOptions($log)) >= 2, what: 'the relaunched server\'s second initialize');
-                    $options = self::initializeOptions($log)[1];
+                    $this->await(static fn (): bool => \count(LspWireLog::initializeOptions($log)) >= 2, what: 'the relaunched server\'s second initialize');
+                    $options = LspWireLog::initializeOptions($log)[1];
                     $this->assertTrue($options['runtimeIndexing'] ?? null, 'the toggled setting reached the relaunch');
                     $this->assertTrue($options['workspaceTrust'] ?? null, 'runtime indexing grants trust');
                 },
