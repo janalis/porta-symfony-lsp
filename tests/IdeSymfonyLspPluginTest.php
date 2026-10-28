@@ -90,11 +90,6 @@ final class IdeSymfonyLspPluginTest extends TestCase
     }
 
     /**
-     * Runtime indexing executes the project's PHP. Switched on globally — the
-     * user's own choice — it still stays off in a project not trusted to run
-     * code: only the project's own answer may let it.
-     */
-    /**
      * Not even with runtime indexing switched on globally: an untrusted
      * project starts no language server at all — one reads the project's
      * config and runs what it names — and the status bar says why.

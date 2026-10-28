@@ -52,8 +52,10 @@ return new class('symfony-lsp') extends AbstractPlugin {
         $options = static fn (): array => $config->initializationOptions(
             (string) $api->setting('php-command'),
             (string) $api->setting('environment'),
-            // Even switched on globally: in an untrusted project, the server
-            // does not execute the project's PHP.
+            // Even switched on globally, never for an untrusted project. Core
+            // starts no server there at all (ServerLocator::restricted()), so
+            // this is the second lock: should one ever start, it would still
+            // not execute the project's PHP.
             (bool) $api->setting('runtime-indexing') && WorkspaceTrust::fromEnvironment()->isTrusted($api->projectRoot()),
         );
         foreach (ServerConfig::LANGUAGES as $language) {
