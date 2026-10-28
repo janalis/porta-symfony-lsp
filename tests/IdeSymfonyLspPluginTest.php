@@ -7,10 +7,12 @@ namespace Porta\SymfonyLsp\Tests;
 use PHPUnit\Framework\TestCase;
 use Porta\Config\CommandRegistry;
 use Porta\Ide;
+use Porta\Lsp\LspSessionPool;
 use Porta\Tests\Support\ClearsPortaLsp;
 use Porta\Tests\Support\LspWireLog;
 use Porta\Tests\Support\NavigatesSettings;
 use Porta\Tests\Support\PreservesPath;
+use Porta\Tests\Support\Probe;
 use Porta\Tests\Support\RunsIde;
 use Porta\Tests\Support\Services;
 use Porta\Tests\Support\TempProject;
@@ -92,7 +94,12 @@ final class IdeSymfonyLspPluginTest extends TestCase
      * user's own choice — it still stays off in a project not trusted to run
      * code: only the project's own answer may let it.
      */
-    public function testRuntimeIndexingStaysOffInAnUntrustedProject(): void
+    /**
+     * Not even with runtime indexing switched on globally: an untrusted
+     * project starts no language server at all — one reads the project's
+     * config and runs what it names — and the status bar says why.
+     */
+    public function testAnUntrustedProjectStartsNoServerEvenWithRuntimeIndexingOn(): void
     {
         $project = self::project('lsp.log', files: ['t.twig' => "{{ app.user }}\n"]);
         $global = \json_decode((string) \file_get_contents($project->path('.porta.json')), associative: true, flags: \JSON_THROW_ON_ERROR);
@@ -101,13 +108,13 @@ final class IdeSymfonyLspPluginTest extends TestCase
         \mkdir($this->untrustingHome->path('.porta'));
         \file_put_contents($this->untrustingHome->path('.porta/config.json'), \json_encode($global, \JSON_THROW_ON_ERROR));
         \unlink($project->path('.porta.json'));
-        $log = $project->path('lsp.log');
 
         $this->runIde($project, $project->path('t.twig'), [
-            300 => function () use ($log): void {
-                $this->await(static fn (): bool => [] !== LspWireLog::initializeOptions($log), what: 'the first initialize to reach the wire log');
-                $this->assertFalse(LspWireLog::initializeOptions($log)[0]['runtimeIndexing'] ?? null);
-                $this->assertFalse(LspWireLog::initializeOptions($log)[0]['workspaceTrust'] ?? null);
+            300 => function (Tui $tui, VirtualTerminal $terminal, Ide $ide): void {
+                $this->awaitPainted($tui, $terminal, 'LSP:off — project not trusted');
+                $pool = Services::resolve($ide, LspSessionPool::class);
+                $this->assertSame([], Probe::get($pool, 'servers'), 'no server to launch: not the plugin\'s, not the global one');
+                $this->assertSame([], Probe::get($pool, 'sessions'), 'and the twig buffer opened launched none');
             },
         ]);
     }
