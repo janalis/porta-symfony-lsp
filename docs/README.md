@@ -7,6 +7,8 @@ neither PHP server ([phpantom](../../phpantom/docs/README.md) nor
 [phpactor](../../phpactor/docs/README.md)) is enabled. Bundled with Porta and
 off by default — turn it on under **Settings → Plugins → symfony-lsp**.
 
+![The symfony-lsp page in Settings → Plugins](/screenshots/plugin-symfony-lsp.svg)
+
 ## Installing the server
 
 The server ships only as a binary on GitHub Releases, so Porta installs it for
