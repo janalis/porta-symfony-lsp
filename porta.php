@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Porta\Config\WorkspaceTrust;
 use Porta\Plugin\Api\AbstractPlugin;
 use Porta\Plugin\Api\PluginApi;
 use Porta\Plugin\Api\ServerNotFound;
@@ -56,7 +55,7 @@ return new class('symfony-lsp') extends AbstractPlugin {
             // starts no server there at all (ServerLocator::restricted()), so
             // this is the second lock: should one ever start, it would still
             // not execute the project's PHP.
-            (bool) $api->setting('runtime-indexing') && WorkspaceTrust::fromEnvironment()->isTrusted($api->projectRoot()),
+            (bool) $api->setting('runtime-indexing') && $api->projectTrusted(),
         );
         foreach (ServerConfig::LANGUAGES as $language) {
             $api->registerLanguageServer(
