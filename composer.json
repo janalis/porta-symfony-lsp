@@ -39,7 +39,11 @@
                         ]
                     ]
                 }
-            ]
+            ],
+            "store": {
+                "title": "Symfony LSP",
+                "category": "languages"
+            }
         }
     }
 }
