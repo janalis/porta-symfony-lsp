@@ -2,6 +2,8 @@
 
 The official Symfony language server (symfony/language-tools) as an LSP provider.
 
+![The symfony-lsp page in Settings → Plugins](https://janalis.github.io/porta/screenshots/plugin-symfony-lsp.svg)
+
 This is `janalis/porta-symfony-lsp`, one of the plugins bundled with
 [Porta](https://github.com/janalis/porta), the terminal IDE for PHP. Porta
 ships it already: turn it on under **Settings → Plugins**. Install this
